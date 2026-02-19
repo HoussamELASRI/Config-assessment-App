@@ -1,0 +1,1660 @@
+% ============================================================
+%  CAHIER DES CHARGES — OUTIL D'AUDIT DE CONFIGURATION
+%  Cisco IOS / IOS-XE Security Assessment (OFFLINE)
+% ============================================================
+\documentclass[12pt, a4paper]{report}
+
+% ---------- Packages ----------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{colortbl}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{titletoc}
+\usepackage{mdframed}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows, positioning, shadows, calc}
+% --- hyperref MUST come after most packages ---
+\usepackage{hyperref}
+% --- tcolorbox and fontawesome5 AFTER hyperref ---
+\usepackage{tcolorbox}
+\usepackage{fontawesome5}
+
+% ---------- Geometry ----------
+\geometry{
+  top=2.5cm, bottom=2.5cm,
+  left=2.8cm, right=2.8cm,
+  headheight=15pt
+}
+
+% ---------- Colors ----------
+\definecolor{ciscoBlue}{HTML}{049FD9}
+\definecolor{ciscoDark}{HTML}{005073}
+\definecolor{ciscoGray}{HTML}{58585B}
+\definecolor{pastelBlue}{HTML}{EBF5FB}
+\definecolor{pastelGray}{HTML}{F5F5F5}
+\definecolor{accentRed}{HTML}{E74C3C}
+\definecolor{accentGreen}{HTML}{27AE60}
+\definecolor{accentOrange}{HTML}{F39C12}
+\definecolor{tableHeader}{HTML}{005073}
+\definecolor{tableRowA}{HTML}{EBF5FB}
+\definecolor{tableRowB}{HTML}{FFFFFF}
+\definecolor{rulePass}{HTML}{D5F5E3}
+\definecolor{ruleFail}{HTML}{FADBD8}
+\definecolor{ruleWarn}{HTML}{FDEBD0}
+
+% ---------- Hyperref ----------
+\hypersetup{
+  colorlinks=true,
+  linkcolor=ciscoDark,
+  urlcolor=ciscoBlue,
+  citecolor=ciscoDark,
+  pdftitle={Cahier des Charges - Audit Cisco IOS-XE},
+  pdfauthor={Equipe Projet},
+  pdfsubject={Security Configuration Assessment - Cisco IOS/IOS-XE}
+}
+
+% ---------- Section Styles ----------
+\titleformat{\chapter}[block]
+  {\color{ciscoDark}\huge\bfseries}
+  {\thechapter}{1em}{}
+  [\vspace{2pt}\color{ciscoBlue}\rule{\textwidth}{2pt}]
+
+\titleformat{\section}
+  {\color{ciscoDark}\Large\bfseries}
+  {\thesection}{1em}{}
+  [\vspace{1pt}\color{ciscoBlue}\rule{\textwidth}{0.8pt}]
+
+\titleformat{\subsection}
+  {\color{ciscoDark}\large\bfseries}
+  {\thesubsection}{1em}{}
+
+\titleformat{\subsubsection}
+  {\color{ciscoGray}\normalsize\bfseries}
+  {\thesubsubsection}{1em}{}
+
+% ---------- Header / Footer ----------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{ciscoGray}\textit{Cahier des Charges — Audit Cisco IOS/IOS-XE}}
+\fancyhead[R]{\small\color{ciscoGray}\textit{Version 1.0 — \today}}
+\fancyfoot[C]{\color{ciscoGray}\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{ciscoBlue}\leaders\hrule height \headrulewidth\hfill}}
+
+% ---------- Listings (code) ----------
+\lstdefinestyle{iosStyle}{
+  backgroundcolor=\color{pastelGray},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  captionpos=b,
+  commentstyle=\color{ciscoGray},
+  keywordstyle=\color{ciscoDark}\bfseries,
+  stringstyle=\color{ciscoBlue},
+  frame=single,
+  rulecolor=\color{ciscoBlue},
+  numbers=left,
+  numberstyle=\tiny\color{ciscoGray},
+  numbersep=5pt,
+  showstringspaces=false,
+  tabsize=2
+}
+\lstset{style=iosStyle}
+
+% ---------- Custom Boxes ----------
+\tcbuselibrary{skins, breakable, listings}
+
+\newtcolorbox{infobox}[1][]{
+  enhanced,
+  colback=pastelBlue,
+  colframe=ciscoBlue,
+  fonttitle=\bfseries\color{white},
+  coltitle=white,
+  attach boxed title to top left={yshift=-2mm, xshift=4mm},
+  boxed title style={colback=ciscoBlue},
+  title=Information,
+  #1
+}
+
+\newtcolorbox{rulebox}[2][]{
+  enhanced,
+  colback=pastelGray,
+  colframe=ciscoDark,
+  fonttitle=\bfseries\color{white},
+  coltitle=white,
+  attach boxed title to top left={yshift=-2mm, xshift=4mm},
+  boxed title style={colback=ciscoDark},
+  title=#2,
+  #1
+}
+
+\newtcolorbox{warnbox}[1][]{
+  enhanced,
+  colback=ruleWarn,
+  colframe=accentOrange,
+  fonttitle=\bfseries,
+  title=\faExclamationTriangle\ Attention,
+  #1
+}
+
+% ============================================================
+\begin{document}
+
+% ============================================================
+%  PAGE DE TITRE
+% ============================================================
+\begin{titlepage}
+  \thispagestyle{empty}
+
+  % ---- Top header bar ----
+  \noindent
+  \begin{tikzpicture}[remember picture, overlay]
+    \fill[ciscoDark] (current page.north west)
+      rectangle ([yshift=-2.2cm]current page.north east);
+    \fill[ciscoBlue] ([yshift=-2.2cm]current page.north west)
+      rectangle ([yshift=-2.45cm]current page.north east);
+  \end{tikzpicture}
+
+  % ---- Logo (top-left inside header) ----
+  \begin{flushright}
+    \vspace*{0.3cm}
+    \includegraphics[height=3cm]{logo.png}
+  \end{flushright}
+
+  \vspace{1.6cm}
+
+  % ---- Main title block ----
+  \begin{center}
+    {\fontsize{9pt}{11pt}\selectfont\color{ciscoGray}\MakeUppercase{%
+      Document de Spécification Technique — Confidentiel}}
+    \\[0.4cm]
+    \color{ciscoDark}\rule{0.9\textwidth}{0.6pt}\\[0.6cm]
+    {\fontsize{28pt}{32pt}\selectfont\bfseries\color{ciscoDark}
+      CAHIER DES CHARGES}\\[0.35cm]
+    {\fontsize{16pt}{20pt}\selectfont\bfseries\color{ciscoBlue}
+      Outil d'Audit de Configuration Sécurité}\\[0.25cm]
+    {\fontsize{13pt}{16pt}\selectfont\bfseries\color{ciscoGray}
+      Cisco IOS\,/\,IOS-XE — Évaluation OFFLINE}\\[0.5cm]
+    \color{ciscoDark}\rule{0.9\textwidth}{0.6pt}
+  \end{center}
+
+  \vspace{0.9cm}
+
+  % ---- Synopsis box ----
+  \begin{center}
+  \begin{tcolorbox}[
+    enhanced,
+    colback=pastelBlue,
+    colframe=ciscoDark,
+    leftrule=5pt, rightrule=0.4pt, toprule=0.4pt, bottomrule=0.4pt,
+    width=0.88\textwidth,
+    arc=2mm,
+    left=8pt, right=8pt, top=6pt, bottom=6pt
+  ]
+    \small\color{ciscoDark}
+    \textbf{Objet :} Ce document définit les exigences fonctionnelles et techniques de
+    l'outil d'audit de configuration sécurité pour équipements Cisco IOS\,/\,IOS-XE.
+    L'analyse est réalisée \textbf{hors-ligne} à partir du fichier
+    \texttt{show running\-config}, en conformité avec le guide officiel Cisco
+    \textit{«Harden IOS/IOS-XE Devices»}.
+    Les résultats sont restitués sous forme de rapport \textbf{JSON} et \textbf{HTML}.
+  \end{tcolorbox}
+  \end{center}
+
+  \vspace{1.1cm}
+
+  % ---- Document info table ----
+  \begin{center}
+  {%
+    \arrayrulecolor{ciscoBlue}%
+    \setlength{\arrayrulewidth}{1.2pt}%
+    \begin{tabular}{|>{\bfseries\color{ciscoDark}\small}p{3.8cm}
+                    |>{\small\color{black}}p{8.5cm}|}
+      \hline
+      \rowcolor{tableHeader}
+      \color{white}\small\bfseries Champ & \color{white}\small\bfseries Valeur \\
+      \hline
+      \rowcolor{tableRowA}
+      Projet      & Automatisation d'Audit de Configuration \\
+      \rowcolor{tableRowB}
+      Module      & Cisco IOS\,/\,IOS-XE Security Hardening \\
+      \rowcolor{tableRowA}
+      Version     & 1.0 \\
+      \rowcolor{tableRowB}
+      Date        & \today \\
+      \rowcolor{tableRowA}
+      Référentiel & Cisco Guide — Harden IOS/IOS-XE Devices \\
+      \rowcolor{tableRowB}
+      Statut      & \textcolor{accentGreen}{\bfseries En cours de rédaction} \\
+      \hline
+    \end{tabular}%
+    \arrayrulecolor{black}%
+  }
+  \end{center}
+
+  \vfill
+
+  % ---- Bottom bar ----
+  \noindent
+  \begin{tikzpicture}[remember picture, overlay]
+    \fill[ciscoBlue] (current page.south west)
+      rectangle ([yshift=0.35cm]current page.south east);
+    \fill[ciscoDark] ([yshift=0.35cm]current page.south west)
+      rectangle ([yshift=1.1cm]current page.south east);
+    \node[anchor=center, text=white, font=\small\itshape]
+      at ([yshift=0.72cm]current page.south)
+      {Confidentiel — Usage Interne Uniquement};
+  \end{tikzpicture}
+  \vspace{0.8cm}
+\end{titlepage}
+
+% ============================================================
+%  TABLE DES MATIÈRES
+% ============================================================
+\tableofcontents
+\clearpage
+
+% ============================================================
+\chapter{Contexte et Présentation du Projet}
+% ============================================================
+
+\section{Contexte Général}
+
+Dans un contexte où la sécurité des infrastructures réseau est devenue un enjeu stratégique majeur, les organisations doivent s'assurer que leurs équipements Cisco IOS/IOS-XE sont configurés conformément aux meilleures pratiques de durcissement (hardening). Ces vérifications, réalisées manuellement par des auditeurs, sont chronophages, sujettes à l'erreur humaine et difficiles à répliquer à grande échelle.
+
+Ce document constitue le \textbf{cahier des charges} de l'outil d'audit de configuration sécurité OFFLINE pour équipements Cisco IOS et IOS-XE. Il décrit de manière exhaustive les règles de conformité à implémenter, la logique d'évaluation attendue, les livrables techniques et les contraintes de développement.
+
+\begin{infobox}[title=Périmètre de ce document]
+  Ce cahier des charges se concentre exclusivement sur le module \textbf{Cisco IOS/IOS-XE}. Les modules Windows et Linux (Ubuntu) feront l'objet de documents distincts. La référence technique principale est le guide Cisco \textit{«Harden IOS / IOS-XE Devices»} disponible à l'adresse : \url{https://www.cisco.com/c/en/us/support/docs/ip/access-lists/13608-21.html}
+\end{infobox}
+
+\section{Problématique}
+
+Les équipements réseau Cisco constituent le cœur des infrastructures IT. Une mauvaise configuration peut exposer le réseau à de nombreuses vulnérabilités :
+\begin{itemize}[leftmargin=1.5cm]
+  \item Accès non autorisé aux interfaces de management (SSH, Telnet, SNMP)
+  \item Absence de mécanismes d'authentification robustes (AAA, TACACS+)
+  \item Exposition aux attaques de déni de service (DoS) par absence de CoPP ou de rate-limiting
+  \item Usurpation d'adresse IP par absence de Unicast RPF ou d'IP Source Guard
+  \item Absence de traçabilité (logs, NTP, NetFlow)
+  \item Protocoles de routage non sécurisés (absence d'authentification MD5)
+\end{itemize}
+
+\section{Objectifs du Projet}
+
+\begin{enumerate}[leftmargin=1.5cm, label=\textbf{OBJ-\arabic*.}]
+  \item \textbf{Importation OFFLINE} : Analyser les fichiers \texttt{show running-config} exportés sans connexion directe aux équipements.
+  \item \textbf{Évaluation de règles} : Vérifier chaque règle de conformité et retourner un statut \texttt{PASS / FAIL / NOT FOUND / NOT APPLICABLE}.
+  \item \textbf{Génération de rapport} : Produire un rapport lisible au format JSON et HTML avec score global et détail par règle.
+  \item \textbf{Extensibilité} : Permettre l'ajout de nouvelles règles via des fichiers YAML sans modifier le code Python.
+  \item \textbf{Couverture} : Couvrir les trois plans de l'architecture Cisco : Management Plane, Control Plane, Data Plane.
+\end{enumerate}
+
+\section{Périmètre Technique}
+
+\begin{table}[H]
+  \centering
+  \caption{Périmètre technique du module Cisco}
+  \begin{tabularx}{\textwidth}{>{\bfseries\color{ciscoDark}}l X}
+    \toprule
+    \rowcolor{tableHeader}\color{white}\textbf{Élément} & \color{white}\textbf{Description} \\
+    \midrule
+    \rowcolor{tableRowA} Équipements visés & Routeurs et switches Cisco IOS / IOS-XE \\
+    \rowcolor{tableRowB} Source de données & Fichier texte brut : \texttt{show running-config} \\
+    \rowcolor{tableRowA} Mode de fonctionnement & OFFLINE (aucune connexion réseau requise) \\
+    \rowcolor{tableRowB} Référentiel & Cisco Harden IOS/IOS-XE Devices Guide \\
+    \rowcolor{tableRowA} Langage & Python 3.10+ \\
+    \rowcolor{tableRowB} Format des règles & YAML \\
+    \rowcolor{tableRowA} Sorties & \texttt{report.json} + \texttt{report.html} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% ============================================================
+\chapter{Architecture Logicielle}
+% ============================================================
+
+\section{Vue d'Ensemble}
+
+L'outil est structuré autour de quatre composants principaux :
+
+\begin{enumerate}[leftmargin=1.5cm]
+  \item \textbf{Parseur Cisco} (\texttt{cisco\_parser.py}) : Lit et structure le contenu du \texttt{show running-config}.
+  \item \textbf{Moteur d'évaluation} (\texttt{evaluator.py}) : Applique les règles YAML sur la configuration parsée.
+  \item \textbf{Base de règles} (\texttt{rules/cisco\_rules.yaml}) : Définit toutes les règles de conformité.
+  \item \textbf{Générateur de rapports} (\texttt{reporter.py}) : Produit les fichiers \texttt{report.json} et \texttt{report.html}.
+\end{enumerate}
+
+\section{Arborescence du Projet}
+
+\begin{lstlisting}[language=bash, caption={Structure des fichiers du module Cisco}]
+config-assessment-tool/
+|-- cisco/
+|   |-- cisco_parser.py          # Parseur du running-config
+|   |-- evaluator.py             # Moteur de regles
+|   |-- reporter.py              # Generateur de rapports
+|   |-- rules/
+|   |   |-- management_plane.yaml
+|   |   |-- control_plane.yaml
+|   |   |-- data_plane.yaml
+|   |-- samples/
+|   |   |-- sample_running_config.txt
+|   |-- tests/
+|       |-- test_cisco_parser.py
+|       |-- test_evaluator.py
+|-- output/
+|   |-- report.json
+|   |-- report.html
+|-- README.md
+\end{lstlisting}
+
+\section{Statuts d'Évaluation}
+
+Chaque règle peut retourner l'un des quatre statuts suivants :
+
+\begin{table}[H]
+  \centering
+  \caption{Statuts de conformité}
+  \begin{tabularx}{\textwidth}{>{\bfseries}l l X}
+    \toprule
+    \rowcolor{tableHeader}\color{white}\textbf{Statut} & \color{white}\textbf{Couleur} & \color{white}\textbf{Signification} \\
+    \midrule
+    \rowcolor{rulePass} PASS & Vert & La règle est respectée dans la configuration. \\
+    \rowcolor{ruleFail} FAIL & Rouge & La règle n'est pas respectée ou la commande est absente. \\
+    \rowcolor{ruleWarn} NOT FOUND & Orange & L'élément à vérifier est absent du fichier de configuration. \\
+    \rowcolor{tableRowB} NOT APPLICABLE & Gris & La règle ne s'applique pas au contexte de cet équipement. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{Format d'une Règle YAML}
+
+Chaque règle est définie dans un fichier YAML selon le format suivant :
+
+\begin{lstlisting}[language=bash, caption={Exemple de règle YAML pour SSHv2}]
+- id: CISCO-MGT-SSH-001
+  section: Management Plane
+  subsection: Secure Interactive Management Sessions
+  title: "SSHv2 doit etre active"
+  description: >
+    SSHv2 est la version securisee du protocole SSH. SSHv1 presente
+    des vulnerabilites connues. La commande 'ip ssh version 2' doit
+    etre presente dans le running-config.
+  check_type: regex_present
+  pattern: "ip ssh version 2"
+  remediation: >
+    Executer : ip ssh version 2
+  severity: HIGH
+  reference: "Cisco Harden IOS-XE - SSHv2"
+\end{lstlisting}
+
+% ============================================================
+\chapter{Management Plane — Règles de Conformité}
+% ============================================================
+
+Le \textbf{Management Plane} regroupe toutes les fonctions permettant de gérer, surveiller et administrer l'équipement réseau. C'est le plan le plus exposé car il concentre les accès d'administration.
+
+% ---- 3.1 ----
+\section{General Management Plane Hardening}
+
+\subsection{Password Management}
+
+\subsubsection{Enhanced Password Security}
+
+\begin{rulebox}{CISCO-MGT-PWD-001 — Enhanced Password Security}
+  \textbf{Objectif :} S'assurer que les mots de passe sont stockés sous forme chiffrée (type 5 ou type 8/9) et non en clair ou en type 7 (réversible).
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+service password-encryption
+enable secret <hash>   ! Type 5 minimum recommande
+  \end{lstlisting}
+
+  \textbf{Logique de vérification :}
+  \begin{itemize}
+    \item \texttt{PASS} : \texttt{service password-encryption} présent ET \texttt{enable secret} (non \texttt{enable password}) utilisé.
+    \item \texttt{FAIL} : \texttt{enable password} en clair détecté OU absence de \texttt{service password-encryption}.
+  \end{itemize}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsubsection{Login Password Retry Lockout}
+
+\begin{rulebox}{CISCO-MGT-PWD-002 — Login Password Retry Lockout}
+  \textbf{Objectif :} Bloquer un compte après N tentatives d'authentification échouées pour prévenir les attaques par force brute.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+aaa local authentication attempts max-fail <N>
+  \end{lstlisting}
+
+  \textbf{Logique de vérification :}
+  \begin{itemize}
+    \item \texttt{PASS} : La directive \texttt{aaa local authentication attempts max-fail} est présente avec une valeur $\leq 5$.
+    \item \texttt{FAIL} : Commande absente ou valeur supérieure à 5.
+  \end{itemize}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsubsection{No Service Password-Recovery}
+
+\begin{rulebox}{CISCO-MGT-PWD-003 — No Service Password-Recovery}
+  \textbf{Objectif :} Désactiver la procédure de récupération de mot de passe par accès physique (console) pour les environnements à haute sécurité.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+no service password-recovery
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}} — \textit{Applicable uniquement si la sécurité physique est garantie.}
+\end{rulebox}
+
+\subsection{Disable Unused Services}
+
+\begin{rulebox}{CISCO-MGT-SVC-001 — Disable Unused Services}
+  \textbf{Objectif :} Désactiver tous les services inutilisés pour réduire la surface d'attaque.
+
+  \textbf{Services à désactiver (vérification de leur absence ou désactivation explicite) :}
+  \begin{lstlisting}
+no service tcp-small-servers
+no service udp-small-servers
+no service finger
+no ip http server           ! Sauf si HTTPS gestion requise
+no ip bootp server
+no cdp run                  ! Si CDP non necessaire
+no ip proxy-arp
+no ip source-route
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{EXEC Timeout}
+
+\begin{rulebox}{CISCO-MGT-EXEC-001 — EXEC Timeout}
+  \textbf{Objectif :} Configurer un délai d'expiration des sessions EXEC pour éviter qu'une session inactive reste ouverte indéfiniment.
+
+  \textbf{Commandes à vérifier (sur chaque ligne vty et console) :}
+  \begin{lstlisting}
+line con 0
+ exec-timeout 5 0
+
+line vty 0 4
+ exec-timeout 10 0
+  \end{lstlisting}
+
+  \textbf{Logique :}
+  \begin{itemize}
+    \item \texttt{PASS} : \texttt{exec-timeout} présent sur toutes les lignes vty et console, valeur $\leq 10$ minutes.
+    \item \texttt{FAIL} : Valeur = 0 0 (jamais de timeout) ou commande absente.
+  \end{itemize}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Keepalives for TCP Sessions}
+
+\begin{rulebox}{CISCO-MGT-KEEPALIVE-001 — Keepalives for TCP Sessions}
+  \textbf{Objectif :} Activer les keepalives TCP pour détecter les sessions TCP orphelines et libérer les ressources.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+service tcp-keepalives-in
+service tcp-keepalives-out
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Management Interface Use}
+
+\begin{rulebox}{CISCO-MGT-INTF-001 — Management Interface Use}
+  \textbf{Objectif :} Isoler le trafic de management sur une interface dédiée (VRF management) pour limiter l'exposition.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+interface GigabitEthernetX
+ vrf forwarding Mgmt-intf
+ ip address <mgmt-ip> <mask>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Memory Threshold Notifications}
+
+\begin{rulebox}{CISCO-MGT-MEM-001 — Memory Threshold Notifications}
+  \textbf{Objectif :} Configurer des alertes lorsque la mémoire disponible descend en dessous d'un seuil critique.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+memory free low-watermark processor <bytes>
+memory free low-watermark io <bytes>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{CPU Thresholding Notification}
+
+\begin{rulebox}{CISCO-MGT-CPU-001 — CPU Thresholding Notification}
+  \textbf{Objectif :} Alerter lorsque l'utilisation CPU dépasse un seuil défini, pouvant indiquer une attaque DoS.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+process cpu threshold type total rising <pct> interval <sec>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Reserve Memory for Console Access}
+
+\begin{rulebox}{CISCO-MGT-RES-001 — Reserve Memory for Console Access}
+  \textbf{Objectif :} Réserver une portion de mémoire pour garantir l'accès console même en situation de pénurie mémoire.
+
+  \begin{lstlisting}
+memory reserve critical <bytes>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Network Time Protocol (NTP)}
+
+\begin{rulebox}{CISCO-MGT-NTP-001 — Network Time Protocol}
+  \textbf{Objectif :} Synchroniser l'horloge de l'équipement avec un serveur NTP fiable et authentifié pour que les logs soient horodatés correctement.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+ntp authenticate
+ntp authentication-key <keyid> md5 <key>
+ntp trusted-key <keyid>
+ntp server <ip> key <keyid>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Disable Smart Install}
+
+\begin{rulebox}{CISCO-MGT-SMI-001 — Disable Smart Install}
+  \textbf{Objectif :} Désactiver le service Smart Install (SMI) s'il n'est pas utilisé, car il a été exploité massivement (CVE-2018-0171).
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+no vstack
+  \end{lstlisting}
+
+  \textbf{Logique :}
+  \begin{itemize}
+    \item \texttt{PASS} : \texttt{no vstack} présent dans le running-config.
+    \item \texttt{FAIL} : \texttt{vstack} présent ou \texttt{no vstack} absent.
+  \end{itemize}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+% ---- 3.2 ----
+\section{Limit Access to the Network with Infrastructure ACLs}
+
+Les Infrastructure ACLs (iACLs) filtrent le trafic destiné aux adresses IP de l'infrastructure (interfaces de management, loopbacks) afin de n'autoriser que les sources légitimes.
+
+\subsection{ICMP Packet Filtering}
+
+\begin{rulebox}{CISCO-ACL-ICMP-001 — ICMP Packet Filtering}
+  \textbf{Objectif :} Restreindre les paquets ICMP entrants vers les adresses de management aux seuls hôtes autorisés.
+
+  \textbf{Extrait d'iACL attendu :}
+  \begin{lstlisting}
+ip access-list extended iACL-INBOUND
+ permit icmp <trusted-hosts> host <router-ip> echo
+ permit icmp <trusted-hosts> host <router-ip> echo-reply
+ deny   icmp any any log
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Filter IP Fragments}
+
+\begin{rulebox}{CISCO-ACL-FRAG-001 — Filter IP Fragments}
+  \textbf{Objectif :} Bloquer les fragments IP non initiaux qui peuvent être utilisés pour contourner les ACL et mener des attaques.
+
+  \begin{lstlisting}
+deny ip any any fragments log
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{ACL Support to Filter IP Options}
+
+\begin{rulebox}{CISCO-ACL-IPOPT-001 — ACL Support to Filter IP Options}
+  \textbf{Objectif :} Bloquer les paquets IP avec des options inhabituelles (Record Route, Timestamp, Loose/Strict Source Routing).
+
+  \begin{lstlisting}
+ip access-list extended iACL-INBOUND
+ deny ip any any option record-route log
+ deny ip any any option timestamp  log
+ deny ip any any option traceroute  log
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{ACL Support to Filter on TTL Value}
+
+\begin{rulebox}{CISCO-ACL-TTL-001 — Filter on TTL Value}
+  \textbf{Objectif :} Rejeter les paquets avec TTL=0 ou TTL=1 non légitimes pour éviter certaines reconnaissances réseau.
+
+  \begin{lstlisting}
+ip access-list extended iACL-INBOUND
+ deny ip any any ttl lt 2 log
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+% ---- 3.3 ----
+\section{Secure Interactive Management Sessions}
+
+\subsection{Management Plane Protection}
+
+\begin{rulebox}{CISCO-MGT-MPP-001 — Management Plane Protection}
+  \textbf{Objectif :} Restreindre les protocoles de management à une interface spécifique (interface de management dédiée).
+
+  \begin{lstlisting}
+control-plane host
+ management-interface GigabitEthernetX allow ssh https
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{SSHv2}
+
+\begin{rulebox}{CISCO-MGT-SSH-001 — SSHv2 Activation}
+  \textbf{Objectif :} S'assurer que seul SSHv2 est activé pour l'administration distante. Telnet doit être désactivé.
+
+  \textbf{Commandes à vérifier :}
+  \begin{lstlisting}
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+
+line vty 0 4
+ transport input ssh    ! Pas de telnet
+  \end{lstlisting}
+
+  \textbf{Logique :}
+  \begin{itemize}
+    \item \texttt{PASS} : \texttt{ip ssh version 2} présent ET \texttt{transport input ssh} (sans telnet) sur toutes les vty.
+    \item \texttt{FAIL} : \texttt{transport input telnet} détecté OU \texttt{ip ssh version 2} absent.
+  \end{itemize}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{SSHv2 Enhancements for RSA Keys}
+
+\begin{rulebox}{CISCO-MGT-SSH-002 — RSA Key Size}
+  \textbf{Objectif :} S'assurer que les clés RSA utilisées pour SSH ont une taille minimale de 2048 bits.
+
+  \begin{lstlisting}
+crypto key generate rsa modulus 2048
+ip ssh rsa keypair-name <name>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Console and AUX Ports}
+
+\begin{rulebox}{CISCO-MGT-CON-001 — Console and AUX Ports}
+  \textbf{Objectif :} Sécuriser ou désactiver les ports Console et AUX.
+
+  \begin{lstlisting}
+line con 0
+ exec-timeout 5 0
+ login authentication <list>
+ transport output ssh
+
+line aux 0
+ exec-timeout 0 1
+ no exec
+ transport input none
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Control vty and tty Lines}
+
+\begin{rulebox}{CISCO-MGT-VTY-001 — Control vty and tty Lines}
+  \textbf{Objectif :} Limiter le nombre de lignes vty actives et appliquer des ACL d'accès.
+
+  \begin{lstlisting}
+line vty 0 4
+ access-class <ACL-MGMT> in
+ login authentication default
+ exec-timeout 10 0
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{Warning Banners}
+
+\begin{rulebox}{CISCO-MGT-BANNER-001 — Warning Banners}
+  \textbf{Objectif :} Afficher une bannière d'avertissement légale avant toute connexion.
+
+  \begin{lstlisting}
+banner motd ^
+  AVERTISSEMENT : Acces autorise uniquement.
+  Toute connexion non autorisee est interdite
+  et sera poursuivie.
+^
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+% ---- 3.4 ----
+\section{Authentication, Authorization, and Accounting (AAA)}
+
+\subsection{TACACS+ Authentication}
+
+\begin{rulebox}{CISCO-AAA-TACACS-001 — TACACS+ Authentication}
+  \textbf{Objectif :} Centraliser l'authentification via TACACS+ permettant un contrôle granulaire et une traçabilité complète.
+
+  \begin{lstlisting}
+aaa new-model
+tacacs server <name>
+ address ipv4 <tacacs-server-ip>
+ key <secret>
+aaa authentication login default group tacacs+ local
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{Authentication Fallback}
+
+\begin{rulebox}{CISCO-AAA-FALLBACK-001 — Authentication Fallback}
+  \textbf{Objectif :} Configurer un compte local de secours en cas d'indisponibilité du serveur TACACS+.
+
+  \begin{lstlisting}
+aaa authentication login default group tacacs+ local
+username <admin> privilege 15 secret <strong-password>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Use of Type 7 Passwords}
+
+\begin{rulebox}{CISCO-AAA-TYPE7-001 — Type 7 Password Detection}
+  \textbf{Objectif :} Détecter l'utilisation de mots de passe de type 7 (facilement déchiffrables) et les signaler.
+
+  \textbf{Logique de détection :}
+  \begin{itemize}
+    \item Rechercher les patterns \texttt{password 7 <hash>} dans le running-config.
+    \item \texttt{FAIL} si des mots de passe type 7 sont trouvés pour des lignes vty/console ou des comptes utilisateurs.
+  \end{itemize}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{TACACS+ Command Authorization}
+
+\begin{rulebox}{CISCO-AAA-AUTHZ-001 — TACACS+ Command Authorization}
+  \textbf{Objectif :} Activer l'autorisation de commandes via TACACS+ pour contrôler quelles commandes chaque utilisateur peut exécuter.
+
+  \begin{lstlisting}
+aaa authorization commands 1 default group tacacs+ local
+aaa authorization commands 15 default group tacacs+ local
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{TACACS+ Command Accounting}
+
+\begin{rulebox}{CISCO-AAA-ACCT-001 — TACACS+ Command Accounting}
+  \textbf{Objectif :} Enregistrer toutes les commandes exécutées sur le serveur TACACS+ à des fins d'audit.
+
+  \begin{lstlisting}
+aaa accounting commands 1 default start-stop group tacacs+
+aaa accounting commands 15 default start-stop group tacacs+
+aaa accounting exec default start-stop group tacacs+
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Redundant AAA Servers}
+
+\begin{rulebox}{CISCO-AAA-REDUND-001 — Redundant AAA Servers}
+  \textbf{Objectif :} Configurer au moins deux serveurs AAA pour assurer la haute disponibilité.
+
+  \begin{lstlisting}
+aaa group server tacacs+ TACACS-SERVERS
+ server name TACACS-PRIMARY
+ server name TACACS-SECONDARY
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+% ---- 3.5 ----
+\section{Fortify the Simple Network Management Protocol (SNMP)}
+
+\subsection{SNMP Community Strings}
+
+\begin{rulebox}{CISCO-SNMP-COMM-001 — SNMP Community Strings}
+  \textbf{Objectif :} S'assurer que les community strings SNMP par défaut (\texttt{public}, \texttt{private}) ne sont pas utilisées.
+
+  \textbf{Logique :}
+  \begin{itemize}
+    \item \texttt{FAIL} si \texttt{snmp-server community public} ou \texttt{snmp-server community private} détecté.
+  \end{itemize}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{SNMP Community Strings with ACLs}
+
+\begin{rulebox}{CISCO-SNMP-COMM-002 — SNMP Community Strings with ACLs}
+  \textbf{Objectif :} Associer une ACL à chaque community string SNMP pour restreindre l'accès.
+
+  \begin{lstlisting}
+snmp-server community <string> RO <ACL-NUMBER>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{SNMP Version 3}
+
+\begin{rulebox}{CISCO-SNMP-V3-001 — SNMP Version 3}
+  \textbf{Objectif :} Utiliser SNMPv3 avec authentification et chiffrement (authPriv) plutôt que SNMPv1/v2c.
+
+  \begin{lstlisting}
+snmp-server group <group> v3 priv
+snmp-server user <user> <group> v3 auth sha <authpass> priv aes 128 <privpass>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+% ---- 3.6 ----
+\section{Logging Best Practices}
+
+\subsection{Send Logs to a Central Location}
+
+\begin{rulebox}{CISCO-LOG-SYSLOG-001 — Send Logs to a Central Location}
+  \textbf{Objectif :} Envoyer les logs vers un serveur Syslog centralisé.
+
+  \begin{lstlisting}
+logging host <syslog-server-ip>
+logging trap informational
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Logging Level}
+
+\begin{rulebox}{CISCO-LOG-LEVEL-001 — Logging Level}
+  \textbf{Objectif :} Configurer un niveau de logging approprié (informational ou debugging en production selon besoin).
+
+  \begin{lstlisting}
+logging trap informational   ! Niveau 6 minimum
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Do Not Log to Console or Monitor Sessions}
+
+\begin{rulebox}{CISCO-LOG-CONSOLE-001 — No Console/Monitor Logging}
+  \textbf{Objectif :} Désactiver le logging vers la console et les sessions monitor pour éviter la dégradation des performances.
+
+  \begin{lstlisting}
+no logging console
+no logging monitor
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Use Buffered Logs}
+
+\begin{rulebox}{CISCO-LOG-BUFFER-001 — Use Buffered Logs}
+  \textbf{Objectif :} Maintenir un buffer de logs local suffisant.
+
+  \begin{lstlisting}
+logging buffered 64000 informational
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Configure Logging Source Interface}
+
+\begin{rulebox}{CISCO-LOG-SRCINTF-001 — Configure Logging Source Interface}
+  \textbf{Objectif :} Utiliser une interface source stable (loopback) pour les messages syslog afin de garantir leur traçabilité.
+
+  \begin{lstlisting}
+logging source-interface Loopback0
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Configure Log Timestamps}
+
+\begin{rulebox}{CISCO-LOG-TIMESTAMP-001 — Configure Log Timestamps}
+  \textbf{Objectif :} Horodater les logs avec une précision à la milliseconde et inclure le fuseau horaire.
+
+  \begin{lstlisting}
+service timestamps log datetime msec localtime show-timezone
+service timestamps debug datetime msec localtime show-timezone
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+% ---- 3.7 ----
+\section{Cisco IOS Software Configuration Management}
+
+\subsection{Configuration Replace and Rollback}
+
+\begin{rulebox}{CISCO-CFG-ROLLBACK-001 — Configuration Replace and Rollback}
+  \textbf{Objectif :} Activer la fonctionnalité de remplacement et de rollback de configuration.
+
+  \begin{lstlisting}
+archive
+ path flash:archive
+ maximum 14
+ time-period 1440
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Cisco IOS Software Resilient Configuration}
+
+\begin{rulebox}{CISCO-CFG-RESILIENT-001 — Resilient Configuration}
+  \textbf{Objectif :} Activer la configuration résiliente pour protéger les fichiers IOS et running-config contre la suppression.
+
+  \begin{lstlisting}
+secure boot-image
+secure boot-config
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+% ============================================================
+\chapter{Control Plane — Règles de Conformité}
+% ============================================================
+
+Le \textbf{Control Plane} traite les paquets nécessaires au fonctionnement des protocoles réseau (routage, spanning tree, etc.). Sa protection est essentielle pour la stabilité du réseau.
+
+\section{General Control Plane Hardening}
+
+\subsection{IP ICMP Redirects}
+
+\begin{rulebox}{CISCO-CP-ICMP-001 — Disable IP ICMP Redirects}
+  \textbf{Objectif :} Désactiver les ICMP Redirects sur toutes les interfaces pour éviter que l'équipement informe les hôtes de meilleures routes (exploitable).
+
+  \begin{lstlisting}
+interface <all>
+ no ip redirects
+  \end{lstlisting}
+
+  \textbf{Logique :} Vérifier l'absence de \texttt{ip redirects} (ou présence de \texttt{no ip redirects}) sur toutes les interfaces.
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{ICMP Unreachables}
+
+\begin{rulebox}{CISCO-CP-ICMP-002 — Disable ICMP Unreachables}
+  \textbf{Objectif :} Désactiver les messages ICMP Unreachable sur les interfaces exposées pour limiter les informations données aux attaquants.
+
+  \begin{lstlisting}
+interface <external>
+ no ip unreachables
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Proxy ARP}
+
+\begin{rulebox}{CISCO-CP-PROXYARP-001 — Disable Proxy ARP}
+  \textbf{Objectif :} Désactiver le Proxy ARP pour éviter que le routeur réponde aux requêtes ARP à la place d'autres hôtes.
+
+  \begin{lstlisting}
+interface <all>
+ no ip proxy-arp
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\section{Limit CPU Impact of Control Plane Traffic}
+
+\subsection{Control Plane Policing (CoPP)}
+
+\begin{rulebox}{CISCO-CP-COPP-001 — Control Plane Policing}
+  \textbf{Objectif :} Implémenter une politique CoPP pour protéger le CPU du routeur contre les inondations de paquets.
+
+  \begin{lstlisting}
+policy-map COPP-POLICY
+ class CRITICAL-TRAFFIC
+  police rate 32000 bps conform-action transmit
+            exceed-action drop
+
+control-plane
+ service-policy input COPP-POLICY
+  \end{lstlisting}
+
+  \textbf{Logique :} Vérifier la présence d'une \texttt{service-policy input} sur le \texttt{control-plane}.
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{Receive ACLs (rACL)}
+
+\begin{rulebox}{CISCO-CP-RACL-001 — Receive ACLs}
+  \textbf{Objectif :} Utiliser des Receive ACLs (disponibles sur certaines plateformes) pour filtrer le trafic destiné au routeur avant traitement CPU.
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\section{Secure BGP}
+
+\subsection{TTL-based Security Protections (GTSM)}
+
+\begin{rulebox}{CISCO-BGP-GTSM-001 — TTL-based Security (GTSM)}
+  \textbf{Objectif :} Utiliser GTSM (Generalized TTL Security Mechanism) pour n'accepter les sessions BGP que de voisins à 1 saut.
+
+  \begin{lstlisting}
+router bgp <AS>
+ neighbor <peer-ip> ttl-security hops 1
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{BGP Peer Authentication with MD5}
+
+\begin{rulebox}{CISCO-BGP-MD5-001 — BGP Peer Authentication}
+  \textbf{Objectif :} Authentifier toutes les sessions BGP par mot de passe MD5 pour éviter les injections de routes.
+
+  \begin{lstlisting}
+router bgp <AS>
+ neighbor <peer-ip> password <secret>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Configure Maximum Prefixes}
+
+\begin{rulebox}{CISCO-BGP-MAXPFX-001 — Maximum Prefixes}
+  \textbf{Objectif :} Limiter le nombre de préfixes reçus d'un pair BGP pour éviter les tables de routage explosives.
+
+  \begin{lstlisting}
+router bgp <AS>
+ neighbor <peer-ip> maximum-prefix <N> <warning-pct>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Filter BGP Prefixes with Prefix Lists}
+
+\begin{rulebox}{CISCO-BGP-PFXLIST-001 — Prefix List Filtering}
+  \textbf{Objectif :} Filtrer les préfixes BGP entrants et sortants via des prefix-lists pour n'accepter que les routes légitimes.
+
+  \begin{lstlisting}
+router bgp <AS>
+ neighbor <peer-ip> prefix-list IN-FILTER in
+ neighbor <peer-ip> prefix-list OUT-FILTER out
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\section{Secure Interior Gateway Protocols}
+
+\subsection{Routing Protocol Authentication with MD5}
+
+\begin{rulebox}{CISCO-IGP-MD5-001 — IGP Authentication}
+  \textbf{Objectif :} Authentifier les échanges OSPF, EIGRP, IS-IS par clé MD5 ou SHA pour éviter les injections de routes.
+
+  \textbf{OSPF :}
+  \begin{lstlisting}
+router ospf <process>
+ area <X> authentication message-digest
+interface <X>
+ ip ospf message-digest-key 1 md5 <key>
+  \end{lstlisting}
+
+  \textbf{EIGRP :}
+  \begin{lstlisting}
+key chain EIGRP-KEYS
+ key 1
+  key-string <secret>
+interface <X>
+ ip authentication mode eigrp <AS> md5
+ ip authentication key-chain eigrp <AS> EIGRP-KEYS
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{Passive-Interface Commands}
+
+\begin{rulebox}{CISCO-IGP-PASSIVE-001 — Passive-Interface}
+  \textbf{Objectif :} Configurer les interfaces non routables en mode passif pour éviter l'envoi de mises à jour de routage sur ces segments.
+
+  \begin{lstlisting}
+router ospf <process>
+ passive-interface default
+ no passive-interface <routing-interface>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\section{Secure First Hop Redundancy Protocols (FHRP)}
+
+\begin{rulebox}{CISCO-FHRP-AUTH-001 — FHRP Authentication}
+  \textbf{Objectif :} Authentifier les messages HSRP, VRRP, GLBP pour éviter qu'un attaquant devienne le routeur actif.
+
+  \textbf{HSRP :}
+  \begin{lstlisting}
+interface <X>
+ standby <group> authentication md5 key-string <secret>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+% ============================================================
+\chapter{Data Plane — Règles de Conformité}
+% ============================================================
+
+Le \textbf{Data Plane} traite le trafic de transit. Sa sécurisation vise à prévenir le spoofing, les attaques DoS et les abus des ressources du plan de données.
+
+\section{General Data Plane Hardening}
+
+\subsection{IP Options Selective Drop}
+
+\begin{rulebox}{CISCO-DP-IPOPT-001 — IP Options Selective Drop}
+  \textbf{Objectif :} Activer le filtrage sélectif des paquets IP avec des options pour réduire la charge CPU.
+
+  \begin{lstlisting}
+ip options drop
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\subsection{Disable IP Source Routing}
+
+\begin{rulebox}{CISCO-DP-SRCROUTE-001 — Disable IP Source Routing}
+  \textbf{Objectif :} Désactiver le Source Routing IP (Loose et Strict) pour empêcher qu'un attaquant dicte le chemin de ses paquets.
+
+  \begin{lstlisting}
+no ip source-route
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Disable ICMP Redirects}
+
+\begin{rulebox}{CISCO-DP-ICMPRED-001 — Disable ICMP Redirects (Data Plane)}
+  \textbf{Objectif :} Désactiver les ICMP Redirects sur toutes les interfaces (complément du plan de contrôle).
+
+  \begin{lstlisting}
+interface <all>
+ no ip redirects
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Disable or Limit IP Directed Broadcasts}
+
+\begin{rulebox}{CISCO-DP-DIRCAST-001 — Disable IP Directed Broadcasts}
+  \textbf{Objectif :} Désactiver les broadcasts dirigés IP pour prévenir les attaques Smurf.
+
+  \begin{lstlisting}
+interface <all>
+ no ip directed-broadcast
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\section{Filter Transit Traffic with Transit ACLs}
+
+Les Transit ACLs (tACL) filtrent le trafic de transit traversant l'équipement vers les segments internes critiques.
+
+\subsection{ICMP Packet Filtering (Transit)}
+
+\begin{rulebox}{CISCO-TACL-ICMP-001 — Transit ICMP Filtering}
+  \textbf{Objectif :} Limiter les types ICMP autorisés en transit.
+
+  \begin{lstlisting}
+ip access-list extended tACL
+ permit icmp any any echo
+ permit icmp any any echo-reply
+ permit icmp any any unreachable
+ deny   icmp any any log
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\section{Anti-Spoofing Protections}
+
+\subsection{Unicast Reverse Path Forwarding (uRPF)}
+
+\begin{rulebox}{CISCO-ANTISPOOFING-URPF-001 — Unicast RPF}
+  \textbf{Objectif :} Activer uRPF sur les interfaces externes pour rejeter les paquets dont l'adresse source ne correspond pas à la table de routage.
+
+  \begin{lstlisting}
+interface <external>
+ ip verify unicast source reachable-via rx
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentRed}{\textbf{CRITIQUE}}
+\end{rulebox}
+
+\subsection{IP Source Guard}
+
+\begin{rulebox}{CISCO-ANTISPOOFING-IPSG-001 — IP Source Guard}
+  \textbf{Objectif :} Activer IP Source Guard sur les ports d'accès pour n'autoriser que les paquets correspondant aux liaisons DHCP.
+
+  \begin{lstlisting}
+interface <access-port>
+ ip verify source
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Dynamic ARP Inspection (DAI)}
+
+\begin{rulebox}{CISCO-ANTISPOOFING-DAI-001 — Dynamic ARP Inspection}
+  \textbf{Objectif :} Activer DAI sur les VLANs pour prévenir le poisoning ARP.
+
+  \begin{lstlisting}
+ip arp inspection vlan <vlan-id>
+interface <trunk>
+ ip arp inspection trust
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentOrange}{\textbf{ÉLEVÉE}}
+\end{rulebox}
+
+\subsection{Port Security}
+
+\begin{rulebox}{CISCO-ANTISPOOFING-PORTSEC-001 — Port Security}
+  \textbf{Objectif :} Limiter le nombre d'adresses MAC autorisées par port pour prévenir les attaques MAC flooding.
+
+  \begin{lstlisting}
+interface <access-port>
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\section{Traffic Identification and Traceback}
+
+\subsection{NetFlow}
+
+\begin{rulebox}{CISCO-TRAFFIC-NETFLOW-001 — NetFlow}
+  \textbf{Objectif :} Activer NetFlow pour la visibilité du trafic et la détection d'anomalies.
+
+  \begin{lstlisting}
+flow record NETFLOW-RECORD
+ match ipv4 source address
+ match ipv4 destination address
+ match transport source-port
+ collect counter bytes
+
+flow exporter NETFLOW-EXPORT
+ destination <collector-ip>
+ transport udp 2055
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\section{Access Control with VLAN Maps and PACLs}
+
+\subsection{Access Control with VLAN Maps}
+
+\begin{rulebox}{CISCO-VLAN-MAP-001 — VLAN Maps Access Control}
+  \textbf{Objectif :} Utiliser des VLAN Access Maps pour contrôler le trafic intra-VLAN.
+
+  \begin{lstlisting}
+vlan access-map VLAN-FILTER 10
+ match ip address <ACL>
+ action forward
+
+vlan filter VLAN-FILTER vlan-list <vlan-id>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+\section{Private VLAN Use}
+
+\subsection{Isolated VLANs}
+
+\begin{rulebox}{CISCO-PVLAN-ISO-001 — Isolated VLANs}
+  \textbf{Objectif :} Utiliser les VLANs privés isolés pour empêcher la communication directe entre hôtes d'un même VLAN.
+
+  \begin{lstlisting}
+vlan <isolated-vlan-id>
+ private-vlan isolated
+
+vlan <primary-vlan-id>
+ private-vlan primary
+ private-vlan association <isolated-vlan-id>
+  \end{lstlisting}
+
+  \textbf{Sévérité :} \textcolor{accentGreen}{\textbf{MOYENNE}}
+\end{rulebox}
+
+% ============================================================
+\chapter{Tableau Récapitulatif des Règles}
+% ============================================================
+
+\begin{longtable}{>{\small}p{3.8cm} >{\small}p{3cm} >{\small}p{2cm} >{\small}p{2cm} >{\small}p{2.5cm}}
+  \caption{Récapitulatif complet des règles de conformité Cisco} \\
+  \toprule
+  \rowcolor{tableHeader}
+  \color{white}\textbf{ID Règle} &
+  \color{white}\textbf{Titre} &
+  \color{white}\textbf{Plan} &
+  \color{white}\textbf{Sévérité} &
+  \color{white}\textbf{Type de check} \\
+  \midrule
+  \endfirsthead
+  \multicolumn{5}{c}{\small\textit{(suite du tableau)}} \\
+  \toprule
+  \rowcolor{tableHeader}
+  \color{white}\textbf{ID Règle} &
+  \color{white}\textbf{Titre} &
+  \color{white}\textbf{Plan} &
+  \color{white}\textbf{Sévérité} &
+  \color{white}\textbf{Type de check} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  \rowcolor{tableRowA} CISCO-MGT-PWD-001 & Enhanced Password Security & Management & \textcolor{accentRed}{CRITIQUE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-MGT-PWD-002 & Login Retry Lockout & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_value \\
+  \rowcolor{tableRowA} CISCO-MGT-PWD-003 & No Service Password-Recovery & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-MGT-SVC-001 & Disable Unused Services & Management & \textcolor{accentOrange}{ÉLEVÉE} & multi\_regex \\
+  \rowcolor{tableRowA} CISCO-MGT-EXEC-001 & EXEC Timeout & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_value \\
+  \rowcolor{tableRowB} CISCO-MGT-KEEPALIVE-001 & Keepalives TCP & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-MGT-INTF-001 & Management Interface & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-MGT-MEM-001 & Memory Threshold & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-MGT-CPU-001 & CPU Thresholding & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-MGT-RES-001 & Reserve Memory Console & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-MGT-NTP-001 & NTP Authenticated & Management & \textcolor{accentOrange}{ÉLEVÉE} & multi\_regex \\
+  \rowcolor{tableRowB} CISCO-MGT-SMI-001 & Disable Smart Install & Management & \textcolor{accentRed}{CRITIQUE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-ACL-ICMP-001 & ICMP Packet Filtering & Management & \textcolor{accentOrange}{ÉLEVÉE} & acl\_check \\
+  \rowcolor{tableRowB} CISCO-ACL-FRAG-001 & Filter IP Fragments & Management & \textcolor{accentOrange}{ÉLEVÉE} & acl\_check \\
+  \rowcolor{tableRowA} CISCO-ACL-IPOPT-001 & Filter IP Options & Management & \textcolor{accentOrange}{ÉLEVÉE} & acl\_check \\
+  \rowcolor{tableRowB} CISCO-ACL-TTL-001 & Filter TTL Value & Management & \textcolor{accentGreen}{MOYENNE} & acl\_check \\
+  \rowcolor{tableRowA} CISCO-MGT-MPP-001 & Management Plane Protection & Management & \textcolor{accentRed}{CRITIQUE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-MGT-SSH-001 & SSHv2 Activation & Management & \textcolor{accentRed}{CRITIQUE} & multi\_regex \\
+  \rowcolor{tableRowA} CISCO-MGT-SSH-002 & RSA Key Size 2048 & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_value \\
+  \rowcolor{tableRowB} CISCO-MGT-CON-001 & Console/AUX Ports & Management & \textcolor{accentOrange}{ÉLEVÉE} & multi\_regex \\
+  \rowcolor{tableRowA} CISCO-MGT-VTY-001 & Control vty Lines & Management & \textcolor{accentRed}{CRITIQUE} & multi\_regex \\
+  \rowcolor{tableRowB} CISCO-MGT-BANNER-001 & Warning Banners & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-AAA-TACACS-001 & TACACS+ Authentication & Management & \textcolor{accentRed}{CRITIQUE} & multi\_regex \\
+  \rowcolor{tableRowB} CISCO-AAA-FALLBACK-001 & Authentication Fallback & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-AAA-TYPE7-001 & No Type 7 Passwords & Management & \textcolor{accentRed}{CRITIQUE} & regex\_absent \\
+  \rowcolor{tableRowB} CISCO-AAA-AUTHZ-001 & TACACS+ Command Authz & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-AAA-ACCT-001 & TACACS+ Accounting & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-AAA-REDUND-001 & Redundant AAA Servers & Management & \textcolor{accentGreen}{MOYENNE} & value\_count \\
+  \rowcolor{tableRowA} CISCO-SNMP-COMM-001 & SNMP Default Strings & Management & \textcolor{accentRed}{CRITIQUE} & regex\_absent \\
+  \rowcolor{tableRowB} CISCO-SNMP-COMM-002 & SNMP Community ACLs & Management & \textcolor{accentOrange}{ÉLEVÉE} & acl\_check \\
+  \rowcolor{tableRowA} CISCO-SNMP-V3-001 & SNMPv3 authPriv & Management & \textcolor{accentRed}{CRITIQUE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-LOG-SYSLOG-001 & Send Logs to Syslog & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-LOG-LEVEL-001 & Logging Level & Management & \textcolor{accentGreen}{MOYENNE} & regex\_value \\
+  \rowcolor{tableRowB} CISCO-LOG-CONSOLE-001 & No Console Logging & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-LOG-BUFFER-001 & Buffered Logs & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-LOG-SRCINTF-001 & Logging Source Interface & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-LOG-TIMESTAMP-001 & Log Timestamps & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-CFG-ROLLBACK-001 & Config Rollback & Management & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-CFG-RESILIENT-001 & Resilient Config & Management & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-CP-ICMP-001 & Disable ICMP Redirects & Control & \textcolor{accentOrange}{ÉLEVÉE} & interface\_check \\
+  \rowcolor{tableRowA} CISCO-CP-ICMP-002 & Disable ICMP Unreachables & Control & \textcolor{accentGreen}{MOYENNE} & interface\_check \\
+  \rowcolor{tableRowB} CISCO-CP-PROXYARP-001 & Disable Proxy ARP & Control & \textcolor{accentGreen}{MOYENNE} & interface\_check \\
+  \rowcolor{tableRowA} CISCO-CP-COPP-001 & Control Plane Policing & Control & \textcolor{accentRed}{CRITIQUE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-CP-RACL-001 & Receive ACLs & Control & \textcolor{accentOrange}{ÉLEVÉE} & acl\_check \\
+  \rowcolor{tableRowA} CISCO-BGP-GTSM-001 & BGP GTSM TTL Security & Control & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-BGP-MD5-001 & BGP MD5 Authentication & Control & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-BGP-MAXPFX-001 & BGP Maximum Prefixes & Control & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-BGP-PFXLIST-001 & BGP Prefix List Filter & Control & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-IGP-MD5-001 & IGP MD5 Authentication & Control & \textcolor{accentRed}{CRITIQUE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-IGP-PASSIVE-001 & Passive-Interface & Control & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-FHRP-AUTH-001 & FHRP Authentication & Control & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-DP-IPOPT-001 & IP Options Selective Drop & Data & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-DP-SRCROUTE-001 & Disable IP Source Routing & Data & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-DP-ICMPRED-001 & Disable ICMP Redirects & Data & \textcolor{accentOrange}{ÉLEVÉE} & interface\_check \\
+  \rowcolor{tableRowA} CISCO-DP-DIRCAST-001 & Disable Directed Broadcasts & Data & \textcolor{accentOrange}{ÉLEVÉE} & interface\_check \\
+  \rowcolor{tableRowB} CISCO-TACL-ICMP-001 & Transit ICMP Filtering & Data & \textcolor{accentOrange}{ÉLEVÉE} & acl\_check \\
+  \rowcolor{tableRowA} CISCO-ANTISPOOFING-URPF-001 & Unicast RPF & Data & \textcolor{accentRed}{CRITIQUE} & interface\_check \\
+  \rowcolor{tableRowB} CISCO-ANTISPOOFING-IPSG-001 & IP Source Guard & Data & \textcolor{accentOrange}{ÉLEVÉE} & interface\_check \\
+  \rowcolor{tableRowA} CISCO-ANTISPOOFING-DAI-001 & Dynamic ARP Inspection & Data & \textcolor{accentOrange}{ÉLEVÉE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-ANTISPOOFING-PORTSEC-001 & Port Security & Data & \textcolor{accentGreen}{MOYENNE} & interface\_check \\
+  \rowcolor{tableRowA} CISCO-TRAFFIC-NETFLOW-001 & NetFlow & Data & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowB} CISCO-VLAN-MAP-001 & VLAN Maps & Data & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+  \rowcolor{tableRowA} CISCO-PVLAN-ISO-001 & Private VLAN Isolated & Data & \textcolor{accentGreen}{MOYENNE} & regex\_present \\
+\end{longtable}
+
+% ============================================================
+\chapter{Livrables et Planning}
+% ============================================================
+
+\section{Livrables Techniques}
+
+\begin{table}[H]
+  \centering
+  \caption{Livrables du module Cisco}
+  \begin{tabularx}{\textwidth}{>{\bfseries}l l X}
+    \toprule
+    \rowcolor{tableHeader}\color{white}\textbf{Livrable} & \color{white}\textbf{Format} & \color{white}\textbf{Description} \\
+    \midrule
+    \rowcolor{tableRowA} cisco\_parser.py & Python & Parseur du \texttt{show running-config} \\
+    \rowcolor{tableRowB} evaluator.py & Python & Moteur d'évaluation des règles YAML \\
+    \rowcolor{tableRowA} management\_plane.yaml & YAML & Règles du Management Plane (~39 règles) \\
+    \rowcolor{tableRowB} control\_plane.yaml & YAML & Règles du Control Plane (~12 règles) \\
+    \rowcolor{tableRowA} data\_plane.yaml & YAML & Règles du Data Plane (~12 règles) \\
+    \rowcolor{tableRowB} reporter.py & Python & Générateur JSON + HTML \\
+    \rowcolor{tableRowA} report.json & JSON & Rapport machine-readable \\
+    \rowcolor{tableRowB} report.html & HTML & Rapport lisible par l'humain \\
+    \rowcolor{tableRowA} Tests unitaires & Python & Couverture $\geq 80\%$ \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{Planning Hebdomadaire Suggéré}
+
+\begin{table}[H]
+  \centering
+  \caption{Planning de développement}
+  \begin{tabularx}{\textwidth}{>{\bfseries\color{ciscoDark}}l X X}
+    \toprule
+    \rowcolor{tableHeader}\color{white}\textbf{Semaine} & \color{white}\textbf{Objectifs} & \color{white}\textbf{Tâches} \\
+    \midrule
+    \rowcolor{tableRowA} S1 & Analyse et Architecture & Lecture du guide Cisco, définition du format YAML, prototype du parseur \\
+    \rowcolor{tableRowB} S2 & Management Plane & Implémentation des 39 règles Management Plane + tests \\
+    \rowcolor{tableRowA} S3 & Control Plane & Implémentation des 12 règles Control Plane (BGP, IGP, CoPP) \\
+    \rowcolor{tableRowB} S4 & Data Plane & Implémentation des 12 règles Data Plane (uRPF, DAI, VLAN) \\
+    \rowcolor{tableRowA} S5 & Rapport & Générateur HTML/JSON, intégration, démo sur sample \\
+    \rowcolor{tableRowB} S6 & Tests \& Finalisation & Tests unitaires, validation sur configs réelles, documentation \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{Critères de Succès}
+
+\begin{itemize}[leftmargin=1.5cm, label=\textcolor{accentGreen}{\faCheckCircle}]
+  \item Couverture de \textbf{100\%} des règles définies dans ce cahier des charges.
+  \item Taux de faux positifs $< 5\%$ sur un ensemble de configurations de référence.
+  \item Génération du rapport en $< 5$ secondes pour un fichier de configuration standard.
+  \item Documentation de chaque règle (description, commande IOS, remédiation).
+  \item Interface HTML lisible sans connaissances techniques avancées.
+\end{itemize}
+
+% ============================================================
+\chapter{Annexes}
+% ============================================================
+
+\section{Exemple de Fichier de Configuration de Test}
+
+\begin{lstlisting}[caption={Extrait d'un show running-config durcis (exemple)}]
+version 16.9
+service timestamps debug datetime msec localtime show-timezone
+service timestamps log datetime msec localtime show-timezone
+service password-encryption
+no service tcp-small-servers
+no service udp-small-servers
+no service finger
+no ip source-route
+no ip http server
+!
+hostname ROUTER-CORE-01
+!
+aaa new-model
+aaa authentication login default group tacacs+ local
+aaa authorization commands 15 default group tacacs+ local
+aaa accounting commands 15 default start-stop group tacacs+
+!
+enable secret 5 $1$mERr$hx5rVt7rPNoS4wqbXKX7m0
+service password-encryption
+!
+tacacs server TAC-PRIMARY
+ address ipv4 10.0.0.100
+ key 7 XXXXXXXX
+!
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+!
+ntp authenticate
+ntp authentication-key 1 md5 NTPKEY
+ntp trusted-key 1
+ntp server 10.0.0.200 key 1
+!
+logging host 10.0.0.150
+logging trap informational
+logging buffered 64000 informational
+logging source-interface Loopback0
+no logging console
+!
+snmp-server view SNMP-VIEW internet included
+snmp-server group SNMP-GRP v3 priv read SNMP-VIEW
+snmp-server user snmpadmin SNMP-GRP v3 auth sha AUTHPASS priv aes 128 PRIVPASS
+!
+control-plane
+ service-policy input COPP-POLICY
+!
+banner motd ^
+ ACCES REGLEMENTE - ACCES AUTORISE UNIQUEMENT
+^
+\end{lstlisting}
+
+\section{Exemple de Rapport JSON}
+
+\begin{lstlisting}[language=bash, caption={Structure du rapport JSON}]
+{
+  "hostname": "ROUTER-CORE-01",
+  "assessment_date": "2026-02-19T10:30:00",
+  "score": {
+    "total_rules": 63,
+    "pass": 48,
+    "fail": 10,
+    "not_found": 3,
+    "not_applicable": 2,
+    "compliance_pct": 76.2
+  },
+  "rules": [
+    {
+      "id": "CISCO-MGT-SSH-001",
+      "title": "SSHv2 doit etre active",
+      "section": "Management Plane",
+      "subsection": "Secure Interactive Management Sessions",
+      "status": "PASS",
+      "severity": "HIGH",
+      "evidence": "ip ssh version 2",
+      "remediation": null
+    },
+    {
+      "id": "CISCO-AAA-TYPE7-001",
+      "title": "No Type 7 Passwords",
+      "section": "Management Plane",
+      "subsection": "AAA",
+      "status": "FAIL",
+      "severity": "CRITICAL",
+      "evidence": "tacacs server TAC-PRIMARY key 7 XXXXX",
+      "remediation": "Remplacer par type 6 ou key <plaintext> en utilisant 'key 6'"
+    }
+  ]
+}
+\end{lstlisting}
+
+\section{Références}
+
+\begin{itemize}[leftmargin=1.5cm]
+  \item Cisco Systems, \textit{Harden IOS/IOS-XE Devices}, \url{https://www.cisco.com/c/en/us/support/docs/ip/access-lists/13608-21.html}
+  \item Cisco Systems, \textit{NSA Guide to Securing Cisco IOS Devices}
+  \item ANSSI, \textit{Recommandations de sécurité pour les architectures réseau}
+  \item CIS Cisco IOS XE Benchmark
+\end{itemize}
+
+\end{document}

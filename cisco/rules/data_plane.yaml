@@ -1,0 +1,767 @@
+# ============================================================
+#  DATA PLANE — CISCO IOS / IOS-XE COMPLIANCE RULES
+#  Reference : Cisco "Harden IOS/IOS-XE Devices" Guide
+#  Total rules in this file : 23
+# ============================================================
+#
+# The Data Plane forwards transit traffic through the device.
+# Hardening focuses on anti-spoofing, DoS protection, and
+# ensuring only legitimate traffic is forwarded.
+# ============================================================
+
+# -------------------------------------------------------------------
+# SECTION : General Data Plane Hardening
+# -------------------------------------------------------------------
+
+- id: "CISCO-DP-IPOPT-001"
+  title: "IP Options Selective Drop activé"
+  plane: "data"
+  section: "General Data Plane Hardening"
+  subsection: "IP Options Selective Drop"
+  severity: "MEDIUM"
+  description: >
+    Les paquets avec des IP Options inhabituelles doivent être traités
+    par le CPU IOS (process-switched), ce qui peut provoquer une
+    dégradation importante des performances en cas d'inondation.
+    'ip options drop' demande au hardware de les rejeter avant
+    d'atteindre le CPU.
+  remediation: >
+    ip options drop
+  reference: "Cisco Harden IOS-XE - IP Options Selective Drop"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^ip options drop"
+        description: "ip options drop configuré globalement"
+
+- id: "CISCO-DP-SRCROUTE-001"
+  title: "IP Source Routing désactivé globalement"
+  plane: "data"
+  section: "General Data Plane Hardening"
+  subsection: "Disable IP Source Routing"
+  severity: "HIGH"
+  description: >
+    Le Source Routing IP (options LSRR et SSRR) permet à l'expéditeur
+    de spécifier le chemin exact du paquet. Cela peut être utilisé pour
+    contourner les ACL et les pare-feux qui filtrent sur la destination.
+    Doit être désactivé sur tous les équipements sauf besoins MPLS
+    spécifiques documentés.
+  remediation: >
+    no ip source-route
+  reference: "Cisco Harden IOS-XE - IP Source Routing"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^no ip source-route"
+        description: "Source Routing désactivé globalement"
+    prohibit:
+      - pattern: "^ip source-route$"
+        description: "Source Routing ne doit pas être explicitement activé"
+
+- id: "CISCO-DP-ICMPRED-001"
+  title: "ICMP Redirects désactivés sur interfaces de transit (Data Plane)"
+  plane: "data"
+  section: "General Data Plane Hardening"
+  subsection: "Disable ICMP Redirects"
+  severity: "HIGH"
+  description: >
+    Complément de la règle Control Plane (CISCO-CP-ICMP-001).
+    Les ICMP Redirects sur les interfaces de transit peuvent indiquer
+    aux hôtes clients une route alternative contrôlée par un attaquant.
+    À désactiver sur toutes les interfaces, particulièrement les
+    interfaces connectées aux segments utilisateurs.
+  remediation: >
+    interface <X>
+      no ip redirects
+  reference: "Cisco Harden IOS-XE - ICMP Redirects (Data Plane)"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "interface (?!Loopback|Null|Tunnel)"
+    all_instances: true
+  conditions:
+    require:
+      - pattern: "no ip redirects"
+        description: "ip redirects désactivé sur cette interface"
+
+- id: "CISCO-DP-DIRCAST-001"
+  title: "IP Directed Broadcasts désactivés sur toutes les interfaces"
+  plane: "data"
+  section: "General Data Plane Hardening"
+  subsection: "Disable or Limit IP Directed Broadcasts"
+  severity: "HIGH"
+  description: >
+    Les IP Directed Broadcasts permettent d'envoyer un paquet vers
+    toutes les adresses d'un sous-réseau distant en ciblant l'adresse
+    de broadcast. Utilisé dans les attaques Smurf (amplification DDoS)
+    où un attaquant forge l'IP source de la victime et inonde un
+    réseau d'amplificateurs. Désactivé par défaut depuis IOS 12.0.
+    Vérifier qu'il n'a pas été réactivé.
+  remediation: >
+    Sur chaque interface :
+      interface <X>
+        no ip directed-broadcast
+  reference: "Cisco Harden IOS-XE - Directed Broadcasts"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "interface (?!Loopback|Null)"
+    all_instances: true
+  conditions:
+    require:
+      - pattern: "no ip directed-broadcast"
+        description: "Directed Broadcast désactivé sur cette interface"
+    prohibit:
+      - pattern: "^\\s*ip directed-broadcast$"
+        description: "Directed broadcast ne doit pas être activé explicitement"
+  notes: >
+    Si 'ip directed-broadcast' est absent d'une interface (ni activé
+    ni désactivé explicitement), IOS le désactive par défaut depuis
+    la version 12.0. Marquer comme PASS avec note "désactivé par défaut".
+
+# -------------------------------------------------------------------
+# SECTION : Filter Transit Traffic with Transit ACLs (tACL)
+# -------------------------------------------------------------------
+
+- id: "CISCO-TACL-ICMP-001"
+  title: "Filtrage ICMP de transit dans tACL"
+  plane: "data"
+  section: "Filter Transit Traffic with Transit ACLs"
+  subsection: "ICMP Packet Filtering (Transit)"
+  severity: "HIGH"
+  description: >
+    Les tACL filtrent le trafic de transit (pas destiné au routeur)
+    traversant l'équipement vers les segments internes.
+    Seuls les types ICMP utiles doivent être autorisés :
+    echo (ping sortant), echo-reply (réponse aux pings), unreachable
+    et time-exceeded (indispensables pour traceroute et PMTUD).
+    Tout autre ICMP doit être bloqué et journalisé.
+  remediation: >
+    ip access-list extended tACL-INBOUND
+      permit icmp any any echo
+      permit icmp any any echo-reply
+      permit icmp any any unreachable
+      permit icmp any any time-exceeded
+      deny   icmp any any log
+  reference: "Cisco Harden IOS-XE - Transit ACLs"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "tACL|TRANSIT|INBOUND|BORDER"
+    require_entries:
+      - pattern: "deny\\s+icmp\\s+any\\s+any"
+        description: "Règle deny ICMP any any présente dans tACL"
+
+# -------------------------------------------------------------------
+# SECTION : Anti-Spoofing Protections
+# -------------------------------------------------------------------
+
+- id: "CISCO-ANTISPOOFING-URPF-001"
+  title: "Unicast Reverse Path Forwarding (uRPF) sur interfaces externes"
+  plane: "data"
+  section: "Anti-Spoofing Protections"
+  subsection: "Unicast Reverse Path Forwarding"
+  severity: "CRITICAL"
+  description: >
+    uRPF vérifie que l'adresse IP source d'un paquet entrant est
+    atteignable via l'interface par laquelle il est arrivé (mode strict)
+    ou via la table de routage (mode loose). Rejette les paquets avec
+    une adresse source spoofée (ex : RFC 1918 sur l'interface Internet).
+    Mode strict recommandé sur les interfaces mono-homed.
+    Mode loose sur les interfaces multi-homed / asymétriques.
+  remediation: >
+    interface <interface_externe>
+      ip verify unicast source reachable-via rx   ! Mode strict
+    OU
+      ip verify unicast source reachable-via any  ! Mode loose (multi-homed)
+  reference: "Cisco Harden IOS-XE - uRPF / BCP38"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "ip verify unicast source reachable-via"
+        description: "uRPF configuré sur au moins une interface externe"
+  notes: >
+    Le parseur doit rechercher 'ip verify unicast source reachable-via'
+    dans les blocs d'interfaces marquées comme externes. Si aucune
+    interface externe n'est identifiable, marquer WARN.
+
+- id: "CISCO-ANTISPOOFING-IPSG-001"
+  title: "IP Source Guard sur ports d'accès"
+  plane: "data"
+  section: "Anti-Spoofing Protections"
+  subsection: "IP Source Guard"
+  severity: "HIGH"
+  description: >
+    IP Source Guard (IPSG) valide l'adresse IP source des paquets
+    entrant sur un port de switch en la comparant à la table de liaisons
+    DHCP Snooping. Si l'adresse source ne correspond à aucune liaison
+    connue, le paquet est rejeté. Empêche le spoofing IP sur les réseaux
+    d'accès utilisateurs.
+  remediation: >
+    ip dhcp snooping
+    ip dhcp snooping vlan <vlan_id>
+    !
+    interface <port_acces>
+      ip verify source
+  reference: "Cisco Harden IOS-XE - IP Source Guard"
+  applicable_if: "ip dhcp snooping"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "ip verify source"
+        description: "IP Source Guard configuré sur au moins un port d'accès"
+  notes: >
+    Applicable uniquement si 'ip dhcp snooping' est configuré.
+    IPSG dépend de la table de liaisons DHCP Snooping pour fonctionner.
+    Marquer NOT_APPLICABLE si DHCP Snooping est absent.
+
+- id: "CISCO-ANTISPOOFING-DAI-001"
+  title: "Dynamic ARP Inspection (DAI) activé sur VLANs"
+  plane: "data"
+  section: "Anti-Spoofing Protections"
+  subsection: "Dynamic ARP Inspection"
+  severity: "HIGH"
+  description: >
+    DAI inspecte les messages ARP et rejette ceux dont le mapping
+    IP/MAC ne correspond pas à la table DHCP Snooping.
+    Empêche les attaques ARP Poisoning / ARP Spoofing qui permettent
+    l'interception MITM du trafic sur un segment L2.
+    Les ports trunk (uplinks) doivent être marqués 'trusted'.
+  remediation: >
+    ip dhcp snooping
+    ip arp inspection vlan <vlan_id>
+    !
+    interface <port_trunk>
+      ip arp inspection trust
+  reference: "Cisco Harden IOS-XE - DAI"
+  applicable_if: "ip dhcp snooping"
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^ip arp inspection vlan \\d+"
+        description: "DAI activé sur au moins un VLAN"
+      - pattern: "ip arp inspection trust"
+        description: "Au moins un port trunk marqué trusted pour DAI"
+  notes: >
+    Applicable uniquement si le device est un switch L2/L3 avec DHCP
+    Snooping configuré. Marquer NOT_APPLICABLE sur les routeurs purs.
+
+- id: "CISCO-ANTISPOOFING-PORTSEC-001"
+  title: "Port Security sur ports d'accès (limite MAC)"
+  plane: "data"
+  section: "Anti-Spoofing Protections"
+  subsection: "Port Security"
+  severity: "MEDIUM"
+  description: >
+    Port Security limite le nombre d'adresses MAC autorisées sur un
+    port de switch. Empêche les attaques MAC Flooding qui saturent la
+    table CAM du switch et le font se comporter comme un hub
+    (exposition de tout le trafic L2 à l'attaquant).
+    Maximum recommandé : 2 MAC par port (1 station + 1 téléphone IP).
+    Violation : restrict (log + drop) plutôt que shutdown (DoS).
+  remediation: >
+    interface <port_acces>
+      switchport mode access
+      switchport port-security maximum 2
+      switchport port-security violation restrict
+      switchport port-security
+  reference: "Cisco Harden IOS-XE - Port Security"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "interface (?:GigabitEthernet|FastEthernet|TenGigabitEthernet)\\S+"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "switchport port-security maximum [12]"
+        description: "Maximum 2 adresses MAC autorisées par port"
+      - pattern: "switchport port-security violation (restrict|protect)"
+        description: "Violation en mode restrict ou protect (pas shutdown)"
+      - pattern: "switchport port-security$"
+        description: "Port Security activé sur le port"
+  notes: >
+    Applicable uniquement sur les ports en mode 'switchport mode access'.
+    Les ports trunk et les ports en mode 'no switchport' (routed)
+    doivent être exclus. Identifier les ports access via la présence de
+    'switchport mode access' dans le bloc interface.
+
+# -------------------------------------------------------------------
+# SECTION : Traffic Identification and Traceback
+# -------------------------------------------------------------------
+
+- id: "CISCO-TRAFFIC-NETFLOW-001"
+  title: "NetFlow / IP Flow configuré pour la visibilité du trafic"
+  plane: "data"
+  section: "Traffic Identification and Traceback"
+  subsection: "NetFlow"
+  severity: "MEDIUM"
+  description: >
+    NetFlow exporte des statistiques de flux (5-tuple) vers un collecteur
+    qui permet la détection d'anomalies, l'analyse forensique et la
+    capacité de traçage des attaques. Indispensable pour les équipements
+    de cœur de réseau. Utiliser Flexible NetFlow (IOS-XE) plutôt que
+    le NetFlow classique (TNFv5/v9).
+  remediation: >
+    flow record NETFLOW-RECORD
+      match ipv4 source address
+      match ipv4 destination address
+      match transport source-port
+      match transport destination-port
+      collect counter bytes
+      collect counter packets
+    !
+    flow exporter NETFLOW-EXPORT
+      destination <ip_collecteur>
+      transport udp 2055
+      export-protocol netflow-v9
+    !
+    flow monitor NETFLOW-MONITOR
+      record NETFLOW-RECORD
+      exporter NETFLOW-EXPORT
+    !
+    interface <X>
+      ip flow monitor NETFLOW-MONITOR input
+  reference: "Cisco Harden IOS-XE - NetFlow"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require_one_of:
+      - pattern: "^flow exporter \\S+"
+        description: "Flexible NetFlow exporter configuré (IOS-XE)"
+      - pattern: "^ip flow-export destination \\S+"
+        description: "NetFlow classique exporter configuré"
+      - pattern: "ip flow (ingress|egress)"
+        description: "NetFlow activé sur au moins une interface"
+  notes: >
+    Marquer WARN (pas FAIL strict) si absent, car certains équipements
+    de périphérie ou de faible capacité peuvent ne pas supporter NetFlow.
+
+# -------------------------------------------------------------------
+# SECTION : Access Control with VLAN Maps and PACLs
+# -------------------------------------------------------------------
+
+- id: "CISCO-VLAN-MAP-001"
+  title: "VLAN Access Maps pour contrôle du trafic intra-VLAN"
+  plane: "data"
+  section: "Access Control with VLAN Maps and PACLs"
+  subsection: "Access Control with VLAN Maps"
+  severity: "MEDIUM"
+  description: >
+    Les VLAN Access Maps (VMAP) filtrent le trafic à l'intérieur d'un
+    VLAN (trafic ne passant pas par une interface routed), là où les
+    ACL classiques sont inefficaces. Permettent d'isoler les stations
+    compromises au sein d'un VLAN sans reconfigurer le VLAN entier.
+  remediation: >
+    ip access-list extended ACL-VLAN-FILTER
+      deny ip <source_suspecte>/32 any
+      permit ip any any
+    !
+    vlan access-map VMAP-FILTER 10
+      match ip address ACL-VLAN-FILTER
+      action forward
+    !
+    vlan filter VMAP-FILTER vlan-list <vlan_id>
+  reference: "Cisco Harden IOS-XE - VLAN Maps"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^vlan access-map \\S+ \\d+"
+        description: "VLAN Access Map définie"
+      - pattern: "^vlan filter \\S+ vlan-list"
+        description: "VLAN Access Map appliquée à un VLAN"
+  notes: >
+    Applicable uniquement sur les switches L2/L3. Marquer NOT_APPLICABLE
+    sur les routeurs sans interfaces switchport.
+
+# -------------------------------------------------------------------
+# SECTION : Private VLANs
+# -------------------------------------------------------------------
+
+- id: "CISCO-PVLAN-ISO-001"
+  title: "Private VLANs isolés pour segmentation intra-VLAN"
+  plane: "data"
+  section: "Private VLAN Use"
+  subsection: "Isolated VLANs"
+  severity: "MEDIUM"
+  description: >
+    Les Private VLANs (PVLAN) permettent d'isoler des hôtes dans un
+    même VLAN primaire : les ports isolated ne peuvent communiquer
+    qu'avec le port promiscuous (passerelle), jamais entre eux.
+    Idéal pour les segments DMZ, hôtes invités, ou infrastructure
+    où chaque équipement doit être isolé des autres.
+  remediation: >
+    vlan <vlan_isolated>
+      private-vlan isolated
+    !
+    vlan <vlan_primary>
+      private-vlan primary
+      private-vlan association <vlan_isolated>
+    !
+    interface <port_isolated>
+      switchport mode private-vlan host
+      switchport private-vlan host-association <primary> <isolated>
+    !
+    interface <port_promiscuous>
+      switchport mode private-vlan promiscuous
+      switchport private-vlan mapping <primary> <isolated>
+  reference: "Cisco Harden IOS-XE - Private VLANs"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "private-vlan isolated"
+        description: "Au moins un VLAN isolé défini"
+      - pattern: "private-vlan primary"
+        description: "VLAN primaire PVLAN défini"
+  notes: >
+    Applicable uniquement sur les switches supportant les PVLAN (Catalyst).
+    Marquer NOT_APPLICABLE sur les routeurs et les switches ne supportant
+    pas les PVLAN. Vérifier la présence de 'vtp mode transparent' qui
+    est requis pour les PVLAN.
+
+- id: "CISCO-PVLAN-COMM-001"
+  title: "Community VLANs (PVLAN) — isolement entre groupes"
+  plane: "data"
+  section: "Private VLAN Use"
+  subsection: "Community VLANs"
+  severity: "MEDIUM"
+  description: >
+    Les Community VLANs permettent aux hôtes d'un même groupe de
+    communiquer entre eux mais pas avec d'autres groupes dans le
+    même VLAN primaire. Idéal pour les segments multi-tenant où
+    plusieurs organisations partagent une infrastructure commune.
+  remediation: >
+    vlan <vlan_community>
+      private-vlan community
+    vlan <vlan_primary>
+      private-vlan primary
+      private-vlan association <vlan_community>
+    interface <port_community>
+      switchport mode private-vlan host
+      switchport private-vlan host-association <primary> <community>
+  reference: "Cisco Harden IOS-XE - Private VLAN Community"
+  applicable_if: "private-vlan primary"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "private-vlan community"
+        description: "Au moins un VLAN community défini"
+  notes: >
+    Applicable uniquement si les PVLAN sont déjà en place
+    (private-vlan primary présent). Marquer NOT_APPLICABLE sur
+    les routeurs et switches sans support PVLAN.
+
+- id: "CISCO-PVLAN-PROM-001"
+  title: "Ports Promiscuous PVLAN correctement configurés"
+  plane: "data"
+  section: "Private VLAN Use"
+  subsection: "Promiscuous Ports"
+  severity: "MEDIUM"
+  description: >
+    Dans une architecture PVLAN, seul le port promiscuous (passerelle)
+    doit être capable de communiquer avec tous les VLANs secondaires.
+    Une mauvaise configuration peut créer un bypass de l'isolation
+    entre hôtes isolated/community. Vérifier que seuls les ports
+    de routage/pare-feu sont en mode promiscuous.
+  remediation: >
+    interface <port_gateway>
+      switchport mode private-vlan promiscuous
+      switchport private-vlan mapping <primary> add <isolated>,<community>
+  reference: "Cisco Harden IOS-XE - PVLAN Promiscuous Ports"
+  applicable_if: "private-vlan primary"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "switchport mode private-vlan promiscuous"
+        description: "Port promiscuous PVLAN configuré"
+      - pattern: "switchport private-vlan mapping \\d+"
+        description: "Mapping PVLAN défini sur le port promiscuous"
+  notes: >
+    Applicable uniquement si les PVLAN sont en place.
+
+# -------------------------------------------------------------------
+# SECTION : Transit ACLs — règles manquantes
+# -------------------------------------------------------------------
+
+- id: "CISCO-TACL-FRAG-001"
+  title: "Filtrage des fragments IP dans les tACL de transit"
+  plane: "data"
+  section: "Filter Transit Traffic with Transit ACLs"
+  subsection: "Filter IP Fragments"
+  severity: "HIGH"
+  description: >
+    Les fragments IP non initiaux (offset > 0) ne contiennent pas
+    d'en-tête de couche 4, ce qui leur permet de contourner les ACL
+    basées sur les ports TCP/UDP. Les tACL sur le trafic de transit
+    doivent bloquer explicitement les fragments IP.
+  remediation: >
+    ip access-list extended tACL-INBOUND
+      deny ip any any fragments log
+  reference: "Cisco Harden IOS-XE - Transit ACL IP Fragments"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "tACL|TRANSIT|INBOUND|BORDER"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+any\\s+any\\s+fragments"
+        description: "Deny IP fragments dans la tACL de transit"
+
+- id: "CISCO-TACL-IPOPT-001"
+  title: "Filtrage des IP Options dans les tACL de transit"
+  plane: "data"
+  section: "Filter Transit Traffic with Transit ACLs"
+  subsection: "ACL Support to Filter IP Options"
+  severity: "HIGH"
+  description: >
+    Les paquets de transit avec des IP Options inhabituelles
+    (Record Route, Timestamp, Source Routing) doivent être bloqués
+    dans les tACL. Ces options peuvent être utilisées pour forcer
+    le routage de paquets de transit via le CPU (process-switched)
+    au lieu du forwarding matériel, provoquant une dégradation CPU.
+  remediation: >
+    ip access-list extended tACL-INBOUND
+      deny ip any any option record-route log
+      deny ip any any option traceroute log
+      deny ip any any option timestamp log
+  reference: "Cisco Harden IOS-XE - Transit ACL IP Options"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "tACL|TRANSIT|INBOUND|BORDER"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+any\\s+any\\s+option"
+        description: "Deny IP options dans la tACL de transit"
+
+# -------------------------------------------------------------------
+# SECTION : Anti-Spoofing — règle manquante
+# -------------------------------------------------------------------
+
+- id: "CISCO-ANTISPOOFING-ACL-001"
+  title: "Anti-Spoofing ACLs (bogon + RFC 1918 en entrée Internet)"
+  plane: "data"
+  section: "Anti-Spoofing Protections"
+  subsection: "Anti-Spoofing ACLs"
+  severity: "HIGH"
+  description: >
+    Sur les interfaces connectées à Internet, bloquer les paquets
+    dont l'adresse source est une adresse privée RFC 1918, loopback
+    (127.x), multicast (224.x), ou bogon. Ces adresses ne peuvent
+    pas provenir légitimement d'Internet et indiquent un spoofing.
+    Complémentaire à uRPF (CISCO-ANTISPOOFING-URPF-001).
+  remediation: >
+    ip access-list extended ANTI-SPOOF-IN
+      deny ip 10.0.0.0 0.255.255.255 any log
+      deny ip 172.16.0.0 0.15.255.255 any log
+      deny ip 192.168.0.0 0.0.255.255 any log
+      deny ip 127.0.0.0 0.255.255.255 any log
+      deny ip 224.0.0.0 31.255.255.255 any log
+      deny ip 0.0.0.0 0.255.255.255 any log
+      permit ip any any
+    interface <wan_interface>
+      ip access-group ANTI-SPOOF-IN in
+  reference: "Cisco Harden IOS-XE - Anti-Spoofing ACLs / BCP38"
+  applicable_if: null
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "ANTI.SPOOF|BOGON|INGRESS|INBOUND"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+10\\.0\\.0\\.0"
+        description: "Bloc RFC 1918 10.0.0.0/8 filtré"
+      - pattern: "deny\\s+ip\\s+172\\.16\\.0\\.0"
+        description: "Bloc RFC 1918 172.16.0.0/12 filtré"
+      - pattern: "deny\\s+ip\\s+192\\.168\\.0\\.0"
+        description: "Bloc RFC 1918 192.168.0.0/16 filtré"
+
+# -------------------------------------------------------------------
+# SECTION : Limit CPU Impact of Data Plane Traffic
+# -------------------------------------------------------------------
+
+- id: "CISCO-DP-CPU-TTL-001"
+  title: "Filtrage Data Plane sur TTL < 2 (protection CPU forwarding anormal)"
+  plane: "data"
+  section: "Limit CPU Impact of Data Plane Traffic"
+  subsection: "Filter on TTL Value"
+  severity: "MEDIUM"
+  description: >
+    Les paquets avec TTL=1 en transit provoquent la génération d'un
+    message ICMP Time Exceeded par le routeur, forçant un traitement
+    CPU (process-switched). En grande quantité, ils épuisent le CPU.
+    Les filtrer dans les tACL ou via CoPP empêche cet abus.
+  remediation: >
+    ip access-list extended tACL-INBOUND
+      deny ip any any ttl lt 2 log
+  reference: "Cisco Harden IOS-XE - Data Plane Filter on TTL"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "tACL|TRANSIT|INBOUND|BORDER"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+any\\s+any\\s+ttl\\s+lt\\s+[12]"
+        description: "Deny TTL < 2 dans la tACL de transit"
+
+- id: "CISCO-DP-CPU-IPOPT-001"
+  title: "Filtrage Data Plane sur présence d'IP Options (anti-process-switch)"
+  plane: "data"
+  section: "Limit CPU Impact of Data Plane Traffic"
+  subsection: "Filter on the Presence of IP Options"
+  severity: "MEDIUM"
+  description: >
+    Les paquets avec des IP Options ne peuvent pas être forwardés
+    par le hardware CEF et sont envoyés vers le CPU pour traitement.
+    Si 'ip options drop' (CISCO-DP-IPOPT-001) est actif, ils sont
+    droppés. Sinon, une tACL doit les intercepter pour éviter la
+    saturation CPU.
+  remediation: >
+    ip options drop
+    ! OU dans la tACL si ip options drop non supporté :
+    ip access-list extended tACL-INBOUND
+      deny ip any any option record-route log
+  reference: "Cisco Harden IOS-XE - Data Plane IP Options CPU Impact"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require_one_of:
+      - pattern: "^ip options drop"
+        description: "ip options drop actif — protection hardware"
+      - pattern: "deny\\s+ip\\s+any\\s+any\\s+option"
+        description: "Filtrage IP options dans une ACL de transit"
+
+- id: "CISCO-DP-CPP-001"
+  title: "Control Plane Protection appliquée au trafic Data Plane anormal"
+  plane: "data"
+  section: "Limit CPU Impact of Data Plane Traffic"
+  subsection: "Control Plane Protection"
+  severity: "HIGH"
+  description: >
+    Le trafic de données anormal (paquets nécessitant une exception CEF :
+    TTL expiré, IP options, ARP, ICMP unreachable) est traité par le CPU.
+    CPPr et CoPP doivent inclure des classes limitant ce type de trafic.
+    La classe 'cef-exception' dans le policing CPPr couvre ce cas.
+  remediation: >
+    class-map match-any CEF-EXCEPTION
+      match exception ttl-failure
+      match exception ip-option
+    policy-map COPP-POLICY
+      class CEF-EXCEPTION
+        police rate 10000 bps conform-action transmit exceed-action drop
+    control-plane
+      service-policy input COPP-POLICY
+  reference: "Cisco Harden IOS-XE - CPP for Data Plane Exceptions"
+  applicable_if: "^control-plane"
+  check_type: "block_regex"
+  context:
+    block: "^control-plane$"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "service-policy input \\S+"
+        description: "Politique CoPP/CPPr appliquée pour limiter le trafic CPU du data plane"
+
+# -------------------------------------------------------------------
+# SECTION : Traffic Identification — Classification ACLs
+# -------------------------------------------------------------------
+
+- id: "CISCO-TRAFFIC-CLASS-001"
+  title: "Classification ACLs pour identification et traçage du trafic"
+  plane: "data"
+  section: "Traffic Identification and Traceback"
+  subsection: "Classification ACLs"
+  severity: "LOW"
+  description: >
+    Les Classification ACLs (avec 'log' ou via NetFlow classifiers)
+    permettent d'identifier et de compter des types de trafic spécifiques
+    sans les bloquer. Utiles pour la détection d'anomalies (baseline
+    traffic), l'investigation post-incident et la preuve de concept
+    avant déploiement d'un filtrage actif.
+  remediation: >
+    ip access-list extended CLASS-TRAFFIC
+      permit tcp any any eq 80 log
+      permit tcp any any eq 443 log
+      permit udp any any eq 53 log
+    interface <X>
+      ip access-group CLASS-TRAFFIC in
+  reference: "Cisco Harden IOS-XE - Classification ACLs"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^ip access-list extended"
+        description: "Au moins une ACL étendue configurée pour classification"
+  notes: >
+    Règle informative (WARN si absente, pas FAIL). La présence de NetFlow
+    (CISCO-TRAFFIC-NETFLOW-001) est équivalente et préférable.
+    Marquer PASS si NetFlow est configuré.
+
+# -------------------------------------------------------------------
+# SECTION : Access Control with VLAN Maps and PACLs — règles manquantes
+# -------------------------------------------------------------------
+
+- id: "CISCO-PACL-001"
+  title: "Port ACLs (PACLs) sur ports d'accès"
+  plane: "data"
+  section: "Access Control with VLAN Maps and PACLs"
+  subsection: "Access Control with PACLs"
+  severity: "MEDIUM"
+  description: >
+    Les Port ACLs (PACLs) sont appliquées directement sur les ports
+    de switch physiques (couche 2) et filtrent le trafic avant qu'il
+    entre dans le VLAN. Plus granulaires que les VLAN Maps car elles
+    s'appliquent port par port. Permettent d'interdire des protocoles
+    spécifiques (ex: Telnet, HTTP) sur des ports utilisateurs.
+  remediation: >
+    ip access-list extended PACL-USERS
+      deny tcp any any eq 23 log
+      deny tcp any any eq 445 log
+      permit ip any any
+    interface <port_acces>
+      ip access-group PACL-USERS in
+  reference: "Cisco Harden IOS-XE - Port ACLs (PACLs)"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "interface (?:GigabitEthernet|FastEthernet|TenGigabitEthernet)\\S+"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "ip access-group \\S+ in"
+        description: "ACL en entrée sur le port d'accès (PACL)"
+  notes: >
+    Applicable uniquement sur les ports en 'switchport mode access'.
+    Marquer WARN si aucun port access n'a d'ACL en entrée.
+
+- id: "CISCO-MACL-001"
+  title: "MAC Access Control Lists sur ports sensibles"
+  plane: "data"
+  section: "Access Control with VLAN Maps and PACLs"
+  subsection: "Access Control with MAC"
+  severity: "LOW"
+  description: >
+    Les MAC ACLs filtrent le trafic non-IP (AppleTalk, IPX, trames L2
+    brutes) qui ne peut pas être filtré par les ACL IP standard.
+    Utiles sur les ports de trunk pour limiter la propagation de
+    protocoles L2 non désirés (CDP, VTP, STP non autorisés).
+  remediation: >
+    mac access-list extended MAC-FILTER
+      deny host <mac_interdite> any
+      permit any any
+    interface <port_acces>
+      mac access-group MAC-FILTER in
+  reference: "Cisco Harden IOS-XE - MAC Access Control Lists"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^mac access-list extended"
+        description: "MAC ACL définie"
+  notes: >
+    Règle de type WARN (pas FAIL strict). Les MAC ACLs sont rarement
+    configurées sauf dans des environnements à très haute sécurité.
+    Marquer WARN si absente sur des switches d'accès critiques.

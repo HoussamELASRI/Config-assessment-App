@@ -1,0 +1,1558 @@
+# ============================================================
+#  MANAGEMENT PLANE — CISCO IOS / IOS-XE COMPLIANCE RULES
+#  Reference : Cisco "Harden IOS/IOS-XE Devices" Guide
+#  Total rules in this file : 57
+# ============================================================
+#
+# check_type catalogue:
+#   global_regex     → match pattern(s) anywhere in the flat file
+#   multi_regex      → multiple require/prohibit patterns, all evaluated globally
+#   regex_absent     → PASS when the pattern is NOT found in the file
+#   value_comparison → extract a number via capture group, compare with threshold
+#   block_regex      → enter a specific named block, match inside it
+#   block_all        → same as block_regex but EVERY instance of the block must pass
+#   acl_content      → enter a named ACL block, verify specific entries exist
+#
+# applicable_if: null  → rule always evaluated
+# applicable_if: "pattern"  → rule only evaluated if pattern exists in the config
+# ============================================================
+
+# -------------------------------------------------------------------
+# SECTION : General Management Plane Hardening
+# SUBSECTION : Password Management
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-PWD-001"
+  title: "Enable Secret au lieu de Enable Password"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Password Management"
+  severity: "CRITICAL"
+  description: >
+    L'utilisation de 'enable password' stocke le mot de passe en clair
+    (ou en type 7 facilement réversible). 'enable secret' utilise MD5
+    (type 5) ou SHA-256 (type 8/9) impossible à inverser directement.
+    Les deux commandes ne doivent pas coexister car 'enable password'
+    prend la main si 'enable secret' est absent.
+  remediation: >
+    Exécuter : no enable password
+    Puis      : enable secret <mot_de_passe_fort>
+    Vérifier  : show running-config | include enable
+  reference: "Cisco Harden IOS-XE - Password Management"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^enable secret "
+        description: "enable secret doit être présent"
+    prohibit:
+      - pattern: "^enable password "
+        description: "enable password (clair/type7) ne doit pas exister"
+
+- id: "CISCO-MGT-PWD-002"
+  title: "Activation de service password-encryption"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Password Management"
+  severity: "MEDIUM"
+  description: >
+    'service password-encryption' chiffre en type 7 tous les mots de passe
+    restants visibles dans la configuration (VTY, console, OSPF, BGP keys).
+    Ce n'est pas un chiffrement fort mais il empêche le shoulder-surfing.
+  remediation: >
+    Exécuter : service password-encryption
+  reference: "Cisco Harden IOS-XE - Password Management"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^service password-encryption"
+        description: "service password-encryption doit être actif"
+    prohibit:
+      - pattern: "^no service password-encryption"
+        description: "ne doit pas être explicitement désactivé"
+
+- id: "CISCO-MGT-PWD-003"
+  title: "Utilisateurs locaux avec secret (pas password)"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Password Management"
+  severity: "HIGH"
+  description: >
+    Les comptes utilisateurs locaux doivent être créés avec 'username X secret'
+    (type 5/8/9) et jamais avec 'username X password' (type 0 ou 7).
+    Type 7 est déchiffrable en quelques secondes avec des outils publics.
+  remediation: >
+    Pour chaque compte : no username <nom>
+    Puis               : username <nom> privilege 15 secret <mdp_fort>
+  reference: "Cisco Harden IOS-XE - Password Management"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^username \\S+ (?:privilege \\d+ )?secret "
+        description: "Au moins un compte local utilisant secret"
+    prohibit:
+      - pattern: "^username \\S+ password "
+        description: "Aucun compte local avec password (type 0/7)"
+
+- id: "CISCO-MGT-PWD-004"
+  title: "Login Password Retry Lockout (≤ 5 tentatives)"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Password Management"
+  severity: "HIGH"
+  description: >
+    Après N tentatives d'authentification locale échouées, le compte est
+    verrouillé. Empêche les attaques par force brute sur les comptes locaux.
+    La valeur doit être ≤ 5 tentatives.
+  remediation: >
+    Exécuter : aaa local authentication attempts max-fail 3
+    Débloquer un compte : clear aaa local user lockout username <nom>
+  reference: "Cisco Harden IOS-XE - Password Management"
+  applicable_if: "^aaa new-model"
+  check_type: "value_comparison"
+  conditions:
+    extract: "aaa local authentication attempts max-fail (\\d+)"
+    operator: "<="
+    threshold: 5
+    description: "La valeur max-fail doit être présente et ≤ 5"
+
+- id: "CISCO-MGT-PWD-005"
+  title: "No Service Password-Recovery"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Password Management"
+  severity: "HIGH"
+  description: >
+    Désactive la procédure de récupération de mot de passe via la séquence
+    Break sur la console. Uniquement si la sécurité physique des équipements
+    est garantie. Attention : perte du mot de passe = remplacement physique.
+  remediation: >
+    Exécuter : no service password-recovery
+    Note : irréversible sans accès physique si mot de passe perdu.
+  reference: "Cisco Harden IOS-XE - Password Management"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^no service password-recovery"
+        description: "no service password-recovery doit être présent"
+
+# -------------------------------------------------------------------
+# SUBSECTION : Disable Unused Services
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-SVC-001"
+  title: "Désactivation des services inutilisés"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Disable Unused Services"
+  severity: "HIGH"
+  description: >
+    Les services réseau TCP/UDP mineurs (echo, discard, chargen, finger)
+    et les services IP non utilisés (bootp, proxy-arp, source-route)
+    augmentent la surface d'attaque. Chacun doit être désactivé
+    explicitement avec la commande 'no'.
+  remediation: >
+    no service tcp-small-servers
+    no service udp-small-servers
+    no service finger
+    no ip bootp server
+    no ip http server
+    no ip proxy-arp (sur chaque interface)
+    no ip source-route
+  reference: "Cisco Harden IOS-XE - Disable Unused Services"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^no service tcp-small-servers"
+        description: "TCP small servers désactivés"
+      - pattern: "^no service udp-small-servers"
+        description: "UDP small servers désactivés"
+      - pattern: "^no ip bootp server"
+        description: "BOOTP server désactivé"
+      - pattern: "^no ip source-route"
+        description: "IP source routing désactivé"
+    prohibit:
+      - pattern: "^ip http server(?! secure)"
+        description: "HTTP server non sécurisé ne doit pas être actif"
+      - pattern: "^service finger"
+        description: "service finger ne doit pas être actif"
+
+# -------------------------------------------------------------------
+# SUBSECTION : EXEC Timeout
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-EXEC-001"
+  title: "EXEC Timeout sur toutes les lignes (≤ 10 min, ≠ 0 0)"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "EXEC Timeout"
+  severity: "HIGH"
+  description: >
+    Une session EXEC inactive sans timeout reste ouverte indéfiniment,
+    permettant à un attaquant physique de l'exploiter.
+    'exec-timeout 0 0' signifie jamais de timeout — critique.
+    Valeur recommandée : ≤ 10 minutes sur vty, ≤ 5 minutes sur console.
+  remediation: >
+    line con 0
+      exec-timeout 5 0
+    line vty 0 4
+      exec-timeout 10 0
+  reference: "Cisco Harden IOS-XE - EXEC Timeout"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "line con 0"
+      - "line vty \\d+"
+    all_instances: true
+  conditions:
+    require:
+      - pattern: "exec-timeout (?!0 0)\\d+ \\d+"
+        description: "exec-timeout présent et différent de 0 0"
+    prohibit:
+      - pattern: "exec-timeout 0 0"
+        description: "Pas de timeout infini"
+
+# -------------------------------------------------------------------
+# SUBSECTION : Keepalives for TCP Sessions
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-KEEPALIVE-001"
+  title: "Keepalives TCP activés (in et out)"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Keepalives for TCP Sessions"
+  severity: "MEDIUM"
+  description: >
+    Les keepalives TCP détectent les sessions orphelines (connexions
+    abandonnées sans FIN/RST propre) et libèrent les ressources associées.
+    Évite l'épuisement des ressources VTY.
+  remediation: >
+    service tcp-keepalives-in
+    service tcp-keepalives-out
+  reference: "Cisco Harden IOS-XE - Keepalives"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^service tcp-keepalives-in"
+        description: "Keepalives entrants activés"
+      - pattern: "^service tcp-keepalives-out"
+        description: "Keepalives sortants activés"
+
+# -------------------------------------------------------------------
+# SUBSECTION : Management Interface / VRF
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-INTF-001"
+  title: "Interface de management isolée (VRF Mgmt)"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Management Interface Use"
+  severity: "HIGH"
+  description: >
+    Isoler le trafic de management dans une VRF dédiée (Mgmt-intf)
+    empêche les paquets de management de transiter par le réseau de
+    production et limite la surface d'attaque.
+  remediation: >
+    ip vrf Mgmt-intf
+    !
+    interface GigabitEthernetX
+      vrf forwarding Mgmt-intf
+      ip address <ip> <mask>
+  reference: "Cisco Harden IOS-XE - Management Interface"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "vrf forwarding [Mm]gmt"
+        description: "VRF de management configurée sur au moins une interface"
+
+# -------------------------------------------------------------------
+# SUBSECTION : Memory & CPU Thresholds
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-MEM-001"
+  title: "Memory Threshold Notifications configurées"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Memory Threshold Notifications"
+  severity: "MEDIUM"
+  description: >
+    Alerter lorsque la mémoire libre descend sous un seuil critique.
+    Permet de détecter prématurément une attaque DoS par épuisement
+    de ressources ou une fuite mémoire.
+  remediation: >
+    memory free low-watermark processor 65536
+    memory free low-watermark io 32768
+  reference: "Cisco Harden IOS-XE - Memory Threshold"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^memory free low-watermark processor \\d+"
+        description: "Seuil mémoire processeur configuré"
+      - pattern: "^memory free low-watermark io \\d+"
+        description: "Seuil mémoire I/O configuré"
+
+- id: "CISCO-MGT-CPU-001"
+  title: "CPU Thresholding Notification configurée"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "CPU Thresholding Notification"
+  severity: "MEDIUM"
+  description: >
+    Déclencher une notification SNMP/syslog si l'utilisation CPU dépasse
+    un seuil sur un intervalle donné. Peut indiquer une attaque DoS ou
+    une boucle de routage.
+  remediation: >
+    process cpu threshold type total rising 80 interval 5
+  reference: "Cisco Harden IOS-XE - CPU Thresholding"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^process cpu threshold type total rising \\d+"
+        description: "Seuil CPU configuré"
+
+- id: "CISCO-MGT-RES-001"
+  title: "Mémoire réservée pour accès console"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Reserve Memory for Console Access"
+  severity: "MEDIUM"
+  description: >
+    Réserver une portion de mémoire garantit que l'administrateur peut
+    toujours se connecter en console même en situation de pénurie mémoire
+    sévère (ex. lors d'une attaque DoS).
+  remediation: >
+    memory reserve critical 65536
+  reference: "Cisco Harden IOS-XE - Reserve Memory"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^memory reserve critical \\d+"
+        description: "Mémoire critique réservée"
+
+# -------------------------------------------------------------------
+# SUBSECTION : Network Time Protocol (NTP)
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-NTP-001"
+  title: "NTP authentifié configuré"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Network Time Protocol"
+  severity: "HIGH"
+  description: >
+    NTP authentifié garantit que l'équipement se synchronise uniquement
+    avec des serveurs NTP de confiance. Un horodatage incorrect invalide
+    les logs et les certificats, et peut perturber les protocoles réseau.
+    Les quatre directives sont toutes requises.
+  remediation: >
+    ntp authenticate
+    ntp authentication-key 1 md5 <clé_secrète>
+    ntp trusted-key 1
+    ntp server <ip_serveur> key 1
+  reference: "Cisco Harden IOS-XE - NTP"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^ntp authenticate$"
+        description: "Authentification NTP activée"
+      - pattern: "^ntp authentication-key \\d+ md5 "
+        description: "Clé d'authentification NTP définie"
+      - pattern: "^ntp trusted-key \\d+"
+        description: "Clé NTP de confiance désignée"
+      - pattern: "^ntp server \\S+ key \\d+"
+        description: "Serveur NTP configuré avec clé"
+
+# -------------------------------------------------------------------
+# SUBSECTION : Disable Smart Install
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-SMI-001"
+  title: "Smart Install désactivé (CVE-2018-0171)"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Disable Smart Install"
+  severity: "CRITICAL"
+  description: >
+    Le service Smart Install (vstack) a été exploité massivement en 2018
+    via CVE-2018-0171 permettant l'exécution de commandes arbitraires
+    sans authentification sur le port TCP 4786. Doit être désactivé
+    sur tous les switches et routeurs qui n'en ont pas besoin.
+  remediation: >
+    no vstack
+    Vérifier : show vstack config | include Role
+  reference: "Cisco Security Advisory cisco-sa-20180328-smi2 / CVE-2018-0171"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^no vstack"
+        description: "Smart Install explicitement désactivé"
+    prohibit:
+      - pattern: "^vstack$"
+        description: "vstack ne doit pas être actif"
+
+# -------------------------------------------------------------------
+# SECTION : Limit Access — Infrastructure ACLs (iACL)
+# -------------------------------------------------------------------
+
+- id: "CISCO-ACL-ICMP-001"
+  title: "Filtrage ICMP dans iACL — seuls hôtes autorisés"
+  plane: "management"
+  section: "Limit Access to the Network with Infrastructure ACLs"
+  subsection: "ICMP Packet Filtering"
+  severity: "HIGH"
+  description: >
+    L'iACL doit permettre uniquement les types ICMP nécessaires
+    (echo, echo-reply) depuis les hôtes de management autorisés
+    et interdire tout autre ICMP avec log vers les adresses IP de
+    l'infrastructure.
+  remediation: >
+    ip access-list extended iACL-INBOUND
+      permit icmp <plage_mgmt> host <ip_routeur> echo
+      permit icmp <plage_mgmt> host <ip_routeur> echo-reply
+      deny   icmp any any log
+  reference: "Cisco Harden IOS-XE - Infrastructure ACLs"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "iACL|INBOUND|INFRA"
+    require_entries:
+      - pattern: "deny\\s+icmp\\s+any\\s+any"
+        description: "Règle deny ICMP any any présente dans l'iACL"
+
+- id: "CISCO-ACL-FRAG-001"
+  title: "Filtrage des fragments IP dans iACL"
+  plane: "management"
+  section: "Limit Access to the Network with Infrastructure ACLs"
+  subsection: "Filter IP Fragments"
+  severity: "HIGH"
+  description: >
+    Les fragments IP non initiaux ne contiennent pas d'informations
+    de couche 4 (port TCP/UDP), ce qui leur permet de contourner les ACL
+    basées sur les ports. Ils doivent être bloqués dans l'iACL.
+  remediation: >
+    ip access-list extended iACL-INBOUND
+      deny ip any any fragments log
+  reference: "Cisco Harden IOS-XE - Filter IP Fragments"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "iACL|INBOUND|INFRA"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+any\\s+any\\s+fragments"
+        description: "Deny IP fragments présent dans l'iACL"
+
+- id: "CISCO-ACL-IPOPT-001"
+  title: "Filtrage des paquets avec IP Options dans iACL"
+  plane: "management"
+  section: "Limit Access to the Network with Infrastructure ACLs"
+  subsection: "ACL Support to Filter IP Options"
+  severity: "HIGH"
+  description: >
+    Les paquets avec IP Options inhabituelles (Record Route, Timestamp,
+    Loose/Strict Source Routing) sont rarement légitimes et peuvent
+    être utilisés pour de la reconnaissance. À bloquer dans l'iACL.
+  remediation: >
+    deny ip any any option record-route log
+    deny ip any any option timestamp log
+    deny ip any any option traceroute log
+  reference: "Cisco Harden IOS-XE - Filter IP Options"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "iACL|INBOUND|INFRA"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+any\\s+any\\s+option"
+        description: "Au moins une entrée deny IP options dans l'iACL"
+
+- id: "CISCO-ACL-TTL-001"
+  title: "Filtrage des paquets TTL < 2 dans iACL"
+  plane: "management"
+  section: "Limit Access to the Network with Infrastructure ACLs"
+  subsection: "ACL Support to Filter on TTL Value"
+  severity: "MEDIUM"
+  description: >
+    Les paquets avec TTL=0 ou TTL=1 ne doivent pas atteindre les
+    interfaces de management. Ils sont souvent utilisés dans des
+    outils de scanning et de traceroute pour cartographier le réseau.
+  remediation: >
+    ip access-list extended iACL-INBOUND
+      deny ip any any ttl lt 2 log
+  reference: "Cisco Harden IOS-XE - Filter TTL Value"
+  applicable_if: "^ip access-list extended"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "iACL|INBOUND|INFRA"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+any\\s+any\\s+ttl\\s+lt\\s+[12]"
+        description: "Deny TTL < 2 dans l'iACL"
+
+# -------------------------------------------------------------------
+# SECTION : Secure Interactive Management Sessions
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-MPP-001"
+  title: "Management Plane Protection (MPP) configurée"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Management Plane Protection"
+  severity: "CRITICAL"
+  description: >
+    MPP restreint les protocoles de management (SSH, HTTPS, SNMP)
+    à une interface dédiée uniquement. Empêche les connexions de
+    management sur les interfaces de transit non sécurisées.
+  remediation: >
+    control-plane host
+      management-interface GigabitEthernetX allow ssh https snmp
+  reference: "Cisco Harden IOS-XE - Management Plane Protection"
+  applicable_if: null
+  check_type: "block_regex"
+  context:
+    block: "control-plane host"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "management-interface \\S+ allow"
+        description: "Interface de management restreinte via MPP"
+
+- id: "CISCO-MGT-SSH-001"
+  title: "SSHv2 obligatoire — Telnet interdit sur VTY"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "SSHv2"
+  severity: "CRITICAL"
+  description: >
+    SSHv1 présente des vulnérabilités cryptographiques connues.
+    Toute administration distante doit utiliser SSHv2 exclusivement.
+    'transport input telnet' sur les lignes VTY est une violation critique
+    car Telnet transmet les informations d'identification en clair.
+  remediation: >
+    ip ssh version 2
+    ip ssh time-out 60
+    ip ssh authentication-retries 3
+    ! Sur chaque ligne vty :
+    line vty 0 4
+      transport input ssh
+  reference: "Cisco Harden IOS-XE - SSHv2"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^ip ssh version 2"
+        description: "SSHv2 activé globalement"
+      - pattern: "transport input ssh"
+        description: "Transport SSH uniquement sur VTY"
+    prohibit:
+      - pattern: "transport input telnet"
+        description: "Telnet ne doit pas être autorisé"
+      - pattern: "transport input all"
+        description: "'transport input all' autorise Telnet — interdit"
+
+- id: "CISCO-MGT-SSH-002"
+  title: "SSH timeout ≤ 60s et retries ≤ 3"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "SSHv2"
+  severity: "HIGH"
+  description: >
+    Limiter le timeout de négociation SSH et le nombre de retries
+    réduit la fenêtre d'attaque par force brute sur l'authentification SSH.
+  remediation: >
+    ip ssh time-out 60
+    ip ssh authentication-retries 3
+  reference: "Cisco Harden IOS-XE - SSHv2 Parameters"
+  applicable_if: "^ip ssh version 2"
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^ip ssh time-out (?:[1-5]\\d|60)$"
+        description: "SSH timeout ≤ 60 secondes"
+      - pattern: "^ip ssh authentication-retries [1-3]$"
+        description: "Retries SSH ≤ 3"
+
+- id: "CISCO-MGT-SSH-003"
+  title: "Clé RSA SSH ≥ 2048 bits"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "SSHv2 Enhancements for RSA Keys"
+  severity: "HIGH"
+  description: >
+    Une clé RSA de 1024 bits ou moins est considérée comme cryptographiquement
+    faible depuis 2015. SSH nécessite au minimum 2048 bits, recommandé 4096.
+    La taille de clé apparaît dans 'show crypto key mypubkey rsa' mais
+    aussi dans 'crypto key generate rsa modulus XXXX' dans la config.
+  remediation: >
+    crypto key zeroize rsa
+    crypto key generate rsa modulus 4096
+  reference: "Cisco Harden IOS-XE - RSA Key Size"
+  applicable_if: "^ip ssh version 2"
+  check_type: "value_comparison"
+  conditions:
+    extract: "crypto key generate rsa (?:general-keys )?modulus (\\d+)"
+    operator: ">="
+    threshold: 2048
+    description: "Modulo RSA doit être ≥ 2048 bits"
+
+- id: "CISCO-MGT-CON-001"
+  title: "Port Console sécurisé (timeout + auth)"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Console and AUX Ports"
+  severity: "HIGH"
+  description: >
+    La ligne console est un accès physique direct. Elle doit avoir
+    un exec-timeout court, une authentification obligatoire et
+    restreindre les transports sortants à SSH uniquement.
+  remediation: >
+    line con 0
+      exec-timeout 5 0
+      login authentication <liste_aaa>
+      transport output ssh
+  reference: "Cisco Harden IOS-XE - Console Port"
+  applicable_if: null
+  check_type: "block_regex"
+  context:
+    block: "line con 0"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "exec-timeout (?!0 0)\\d+"
+        description: "Timeout console configuré (≠ 0 0)"
+      - pattern: "login (authentication|local)"
+        description: "Authentification exigée sur console"
+    prohibit:
+      - pattern: "exec-timeout 0 0"
+        description: "Pas de timeout infini sur console"
+      - pattern: "no login"
+        description: "Login ne doit pas être désactivé sur console"
+
+- id: "CISCO-MGT-AUX-001"
+  title: "Port AUX désactivé ou sécurisé"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Console and AUX Ports"
+  severity: "HIGH"
+  description: >
+    Le port AUX est un modem analogique qui, si connecté, offre
+    un accès réseau non sécurisé à l'équipement. Il doit être
+    désactivé ('no exec') ou sécurisé avec timeout minimal et
+    'transport input none'.
+  remediation: >
+    line aux 0
+      exec-timeout 0 1
+      no exec
+      transport input none
+  reference: "Cisco Harden IOS-XE - AUX Port"
+  applicable_if: null
+  check_type: "block_regex"
+  context:
+    block: "line aux 0"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "no exec|transport input none"
+        description: "AUX désactivé ou sans transport autorisé"
+
+- id: "CISCO-MGT-VTY-001"
+  title: "VTY : ACL d'accès + auth AAA + transport SSH"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Control vty and tty Lines"
+  severity: "CRITICAL"
+  description: >
+    Chaque groupe de lignes VTY doit avoir : une ACL restreignant les
+    sources autorisées, une authentification AAA obligatoire, un
+    exec-timeout et uniquement SSH comme transport.
+    Sans ACL sur VTY, n'importe quelle adresse peut tenter de se connecter.
+  remediation: >
+    line vty 0 4
+      access-class <ACL_MGMT> in
+      login authentication default
+      exec-timeout 10 0
+      transport input ssh
+  reference: "Cisco Harden IOS-XE - vty Lines"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "line vty \\d+"
+    all_instances: true
+  conditions:
+    require:
+      - pattern: "access-class \\S+ in"
+        description: "ACL d'accès appliquée en entrée"
+      - pattern: "login (authentication|local)"
+        description: "Authentification obligatoire"
+      - pattern: "transport input ssh"
+        description: "Uniquement SSH autorisé"
+    prohibit:
+      - pattern: "no login"
+        description: "Login ne doit pas être désactivé"
+
+- id: "CISCO-MGT-BANNER-001"
+  title: "Bannière d'avertissement légale configurée"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Warning Banners"
+  severity: "MEDIUM"
+  description: >
+    La bannière MOTD avertit les utilisateurs non autorisés et constitue
+    une exigence légale dans la plupart des juridictions pour permettre
+    des poursuites judiciaires. Elle ne doit pas contenir d'informations
+    système (hostname, version IOS) qui aideraient un attaquant.
+  remediation: >
+    banner motd ^
+      AVERTISSEMENT : Système réglementé. Accès réservé au personnel autorisé.
+      Toute connexion non autorisée fera l'objet de poursuites judiciaires.
+    ^
+  reference: "Cisco Harden IOS-XE - Warning Banners"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^banner (motd|login|exec)"
+        description: "Au moins une bannière d'avertissement configurée"
+
+# -------------------------------------------------------------------
+# SECTION : Authentication, Authorization, and Accounting (AAA)
+# -------------------------------------------------------------------
+
+- id: "CISCO-AAA-TACACS-001"
+  title: "AAA new-model + TACACS+ comme méthode principale"
+  plane: "management"
+  section: "AAA"
+  subsection: "TACACS+ Authentication"
+  severity: "CRITICAL"
+  description: >
+    'aaa new-model' active le framework AAA.
+    TACACS+ (TCP port 49) est préférable à RADIUS pour les équipements
+    Cisco car il chiffre l'intégralité de la session (RADIUS ne chiffre
+    que le mot de passe). Fournit authentification, autorisation et
+    traçabilité centralisées.
+  remediation: >
+    aaa new-model
+    tacacs server <nom>
+      address ipv4 <ip_tacacs>
+      key <secret_fort>
+    aaa authentication login default group tacacs+ local
+  reference: "Cisco Harden IOS-XE - AAA / TACACS+"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^aaa new-model"
+        description: "AAA new-model activé"
+      - pattern: "^tacacs server \\S+"
+        description: "Serveur TACACS+ configuré"
+      - pattern: "^aaa authentication login default group tacacs\\+"
+        description: "TACACS+ comme méthode d'auth principale"
+
+- id: "CISCO-AAA-FALLBACK-001"
+  title: "Fallback local en cas d'indisponibilité TACACS+"
+  plane: "management"
+  section: "AAA"
+  subsection: "Authentication Fallback"
+  severity: "HIGH"
+  description: >
+    Sans fallback local, une panne du serveur TACACS+ rend l'équipement
+    impossible à administrer. La méthode 'local' doit être listée en
+    dernier recours avec un compte local de secours configuré.
+  remediation: >
+    aaa authentication login default group tacacs+ local
+    username admin_backup privilege 15 secret <mdp_fort>
+  reference: "Cisco Harden IOS-XE - AAA Fallback"
+  applicable_if: "^aaa new-model"
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^aaa authentication login default group tacacs\\+ local"
+        description: "Fallback local configuré dans la méthode AAA"
+      - pattern: "^username \\S+ privilege 15 secret "
+        description: "Compte local de secours avec privilege 15 défini"
+
+- id: "CISCO-AAA-TYPE7-001"
+  title: "Aucun mot de passe Type-7 (facilement déchiffrable)"
+  plane: "management"
+  section: "AAA"
+  subsection: "Use of Type 7 Passwords"
+  severity: "CRITICAL"
+  description: >
+    Les mots de passe de type 7 utilisent un chiffrement de substitution
+    XOR avec une clé publique. Des outils en ligne déchiffrent un type 7
+    en moins d'une seconde. Toutes les occurrences 'password 7' doivent
+    être éliminées au profit de 'secret' (type 5) ou de clés type 6.
+  remediation: >
+    Identifier : show running-config | include password 7
+    Remplacer  : username X secret <mdp>  (pour les utilisateurs)
+    Pour les clés TACACS/NTP : utiliser 'key 6' avec chiffrement AES
+  reference: "Cisco Harden IOS-XE - Type 7 Passwords"
+  applicable_if: null
+  check_type: "regex_absent"
+  conditions:
+    prohibit:
+      - pattern: "password 7 [0-9A-F]+"
+        description: "Aucun mot de passe type 7 trouvé dans la config"
+
+- id: "CISCO-AAA-AUTHZ-001"
+  title: "Autorisation de commandes TACACS+ (niveaux 1 et 15)"
+  plane: "management"
+  section: "AAA"
+  subsection: "TACACS+ Command Authorization"
+  severity: "HIGH"
+  description: >
+    L'autorisation de commandes garantit que chaque commande exécutée
+    est validée par le serveur TACACS+ avant exécution. Empêche
+    un utilisateur authentifié d'exécuter des commandes non autorisées.
+  remediation: >
+    aaa authorization commands 1 default group tacacs+ local
+    aaa authorization commands 15 default group tacacs+ local
+    aaa authorization exec default group tacacs+ local
+  reference: "Cisco Harden IOS-XE - Command Authorization"
+  applicable_if: "^aaa new-model"
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^aaa authorization commands 15 default group tacacs\\+"
+        description: "Autorisation des commandes niveau 15 via TACACS+"
+      - pattern: "^aaa authorization exec default"
+        description: "Autorisation exec configurée"
+
+- id: "CISCO-AAA-ACCT-001"
+  title: "Accounting de commandes TACACS+ (traçabilité)"
+  plane: "management"
+  section: "AAA"
+  subsection: "TACACS+ Command Accounting"
+  severity: "HIGH"
+  description: >
+    L'accounting enregistre sur le serveur TACACS+ chaque commande
+    exécutée avec le nom d'utilisateur, la date/heure et le résultat.
+    Indispensable pour la forensique et la conformité réglementaire.
+  remediation: >
+    aaa accounting commands 1 default start-stop group tacacs+
+    aaa accounting commands 15 default start-stop group tacacs+
+    aaa accounting exec default start-stop group tacacs+
+  reference: "Cisco Harden IOS-XE - Command Accounting"
+  applicable_if: "^aaa new-model"
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^aaa accounting commands 15 default start-stop group tacacs\\+"
+        description: "Accounting des commandes niv 15 activé"
+      - pattern: "^aaa accounting exec default start-stop"
+        description: "Accounting des sessions exec activé"
+
+- id: "CISCO-AAA-REDUND-001"
+  title: "Au moins 2 serveurs AAA configurés (haute disponibilité)"
+  plane: "management"
+  section: "AAA"
+  subsection: "Redundant AAA Servers"
+  severity: "MEDIUM"
+  description: >
+    Un seul serveur AAA est un SPOF (Single Point of Failure).
+    En cas de panne, l'authentification TACACS+ échoue et l'équipement
+    tombe en mode fallback. Au moins 2 serveurs doivent être configurés.
+  remediation: >
+    tacacs server TACACS-PRIMARY
+      address ipv4 <ip_primaire>
+      key <secret>
+    tacacs server TACACS-SECONDARY
+      address ipv4 <ip_secondaire>
+      key <secret>
+  reference: "Cisco Harden IOS-XE - Redundant AAA"
+  applicable_if: "^aaa new-model"
+  check_type: "value_count"
+  conditions:
+    pattern: "^tacacs server \\S+"
+    operator: ">="
+    threshold: 2
+    description: "Au moins 2 serveurs TACACS+ configurés"
+
+# -------------------------------------------------------------------
+# SECTION : Fortify SNMP
+# -------------------------------------------------------------------
+
+- id: "CISCO-SNMP-COMM-001"
+  title: "Pas de community strings par défaut (public/private)"
+  plane: "management"
+  section: "Fortify SNMP"
+  subsection: "SNMP Community Strings"
+  severity: "CRITICAL"
+  description: >
+    Les community strings 'public' et 'private' sont universellement
+    connues. Leur présence permet à n'importe quel outil de monitoring
+    SNMP de lire (voire modifier avec 'private' en RW) toute la
+    configuration de l'équipement.
+  remediation: >
+    no snmp-server community public
+    no snmp-server community private
+  reference: "Cisco Harden IOS-XE - SNMP Community Strings"
+  applicable_if: "^snmp-server"
+  check_type: "regex_absent"
+  conditions:
+    prohibit:
+      - pattern: "^snmp-server community public"
+        description: "Community 'public' ne doit pas exister"
+      - pattern: "^snmp-server community private"
+        description: "Community 'private' ne doit pas exister"
+
+- id: "CISCO-SNMP-COMM-002"
+  title: "Community SNMP restreinte par ACL"
+  plane: "management"
+  section: "Fortify SNMP"
+  subsection: "SNMP Community Strings with ACLs"
+  severity: "HIGH"
+  description: >
+    Chaque community string SNMP doit référencer une ACL numérotée
+    ou nommée restreignant les adresses IP autorisées à effectuer
+    des requêtes SNMP. Sans ACL, n'importe quel hôte peut interroger
+    l'équipement.
+  remediation: >
+    ip access-list standard ACL-SNMP
+      permit <plage_nms>
+    snmp-server community <string> RO ACL-SNMP
+  reference: "Cisco Harden IOS-XE - SNMP ACL"
+  applicable_if: "^snmp-server community"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^snmp-server community \\S+ R[OW] \\S+"
+        description: "Community SNMP avec ACL référencée"
+
+- id: "CISCO-SNMP-V3-001"
+  title: "SNMPv3 avec authPriv (auth + chiffrement)"
+  plane: "management"
+  section: "Fortify SNMP"
+  subsection: "SNMP Version 3"
+  severity: "CRITICAL"
+  description: >
+    SNMPv1/v2c transportent les community strings en clair et n'offrent
+    pas d'authentification cryptographique. SNMPv3 avec niveau 'priv'
+    utilise SHA pour l'authentification et AES pour le chiffrement.
+    C'est la seule variante acceptable pour les environnements sécurisés.
+  remediation: >
+    snmp-server group <groupe> v3 priv
+    snmp-server user <user> <groupe> v3 auth sha <mdp_auth> priv aes 128 <mdp_priv>
+  reference: "Cisco Harden IOS-XE - SNMPv3"
+  applicable_if: "^snmp-server"
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^snmp-server group \\S+ v3 priv"
+        description: "Groupe SNMPv3 avec niveau priv"
+      - pattern: "^snmp-server user \\S+ \\S+ v3 auth sha"
+        description: "Utilisateur SNMPv3 avec auth SHA"
+
+# -------------------------------------------------------------------
+# SECTION : Logging Best Practices
+# -------------------------------------------------------------------
+
+- id: "CISCO-LOG-SYSLOG-001"
+  title: "Logs envoyés vers serveur Syslog centralisé"
+  plane: "management"
+  section: "Logging Best Practices"
+  subsection: "Send Logs to a Central Location"
+  severity: "HIGH"
+  description: >
+    Les logs locaux sont perdus en cas de reboot et peuvent être falsifiés
+    par un attaquant ayant accès à l'équipement. Un serveur Syslog
+    centralisé (SIEM) assure la conservation et l'intégrité des événements.
+  remediation: >
+    logging host <ip_syslog>
+    logging trap informational
+  reference: "Cisco Harden IOS-XE - Syslog"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^logging host \\S+"
+        description: "Serveur syslog distant configuré"
+      - pattern: "^logging trap (informational|debugging|notifications|warnings)"
+        description: "Niveau de logging pour le serveur distant"
+
+- id: "CISCO-LOG-CONSOLE-001"
+  title: "Pas de logging console ni monitor (performances)"
+  plane: "management"
+  section: "Logging Best Practices"
+  subsection: "Do Not Log to Console or Monitor Sessions"
+  severity: "MEDIUM"
+  description: >
+    Le logging vers la console est synchrone et bloque les processus
+    IOS lors d'une tempête de logs. Le logging monitor pollue les
+    sessions SSH d'administration. Les deux doivent être désactivés
+    en production.
+  remediation: >
+    no logging console
+    no logging monitor
+  reference: "Cisco Harden IOS-XE - Logging"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^no logging console"
+        description: "Logging console désactivé"
+      - pattern: "^no logging monitor"
+        description: "Logging monitor désactivé"
+
+- id: "CISCO-LOG-BUFFER-001"
+  title: "Buffer de logs local configuré (≥ 16384 octets)"
+  plane: "management"
+  section: "Logging Best Practices"
+  subsection: "Use Buffered Logs"
+  severity: "MEDIUM"
+  description: >
+    Un buffer local conserve les derniers événements et est utilisé
+    lors de l'analyse forensique sans connexion au SIEM. La taille
+    minimale recommandée est 16 Ko; 64 Ko est préférable.
+  remediation: >
+    logging buffered 64000 informational
+  reference: "Cisco Harden IOS-XE - Logging Buffer"
+  applicable_if: null
+  check_type: "value_comparison"
+  conditions:
+    extract: "^logging buffered (\\d+)"
+    operator: ">="
+    threshold: 16384
+    description: "Buffer de logs ≥ 16384 octets"
+
+- id: "CISCO-LOG-SRCINTF-001"
+  title: "Interface source des logs = Loopback stable"
+  plane: "management"
+  section: "Logging Best Practices"
+  subsection: "Configure Logging Source Interface"
+  severity: "MEDIUM"
+  description: >
+    Si le serveur Syslog filtre par IP source, utiliser une interface
+    physique peut rendre les logs silencieux en cas de panne de lien.
+    L'interface Loopback0 est toujours up tant que l'équipement fonctionne.
+  remediation: >
+    logging source-interface Loopback0
+  reference: "Cisco Harden IOS-XE - Logging Source"
+  applicable_if: "^logging host"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^logging source-interface Loopback"
+        description: "Interface source = Loopback"
+
+- id: "CISCO-LOG-TIMESTAMP-001"
+  title: "Timestamps logs avec précision milliseconde + timezone"
+  plane: "management"
+  section: "Logging Best Practices"
+  subsection: "Configure Log Timestamps"
+  severity: "HIGH"
+  description: >
+    Sans timestamps précis, la corrélation d'événements dans un SIEM
+    est impossible. Les deux services (log et debug) doivent inclure
+    la milliseconde et le fuseau horaire pour une cohérence absolue.
+  remediation: >
+    service timestamps log datetime msec localtime show-timezone
+    service timestamps debug datetime msec localtime show-timezone
+  reference: "Cisco Harden IOS-XE - Timestamps"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^service timestamps log datetime msec"
+        description: "Timestamps log avec msec"
+      - pattern: "^service timestamps debug datetime msec"
+        description: "Timestamps debug avec msec"
+
+# -------------------------------------------------------------------
+# SECTION : Cisco IOS Software Configuration Management
+# -------------------------------------------------------------------
+
+- id: "CISCO-CFG-ROLLBACK-001"
+  title: "Archive de configuration (rollback) configurée"
+  plane: "management"
+  section: "IOS Configuration Management"
+  subsection: "Configuration Replace and Rollback"
+  severity: "MEDIUM"
+  description: >
+    La fonctionnalité archive permet de sauvegarder automatiquement les
+    configurations et d'effectuer un rollback en cas de mauvaise
+    manipulation. 'time-period 1440' = sauvegarde toutes les 24h.
+  remediation: >
+    archive
+      path flash:archive
+      maximum 14
+      time-period 1440
+  reference: "Cisco Harden IOS-XE - Configuration Archive"
+  applicable_if: null
+  check_type: "block_regex"
+  context:
+    block: "^archive"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "path (flash|bootflash|tftp|ftp):"
+        description: "Chemin d'archive configuré"
+      - pattern: "maximum \\d+"
+        description: "Nombre maximum d'archives défini"
+
+- id: "CISCO-CFG-RESILIENT-001"
+  title: "Configuration et image IOS résilientes"
+  plane: "management"
+  section: "IOS Configuration Management"
+  subsection: "Cisco IOS Software Resilient Configuration"
+  severity: "HIGH"
+  description: >
+    'secure boot-image' et 'secure boot-config' créent des copies
+    cachées et en lecture seule de l'image IOS et de la running-config.
+    Ces copies ne peuvent pas être supprimées via IOS habituel,
+    protégeant contre les sabotages et certains malwares IOS.
+  remediation: >
+    secure boot-image
+    secure boot-config
+  reference: "Cisco Harden IOS-XE - Resilient Configuration"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^secure boot-image"
+        description: "Image IOS protégée"
+      - pattern: "^secure boot-config"
+        description: "Configuration courante protégée"
+
+- id: "CISCO-CFG-EXCL-001"
+  title: "Exclusive Configuration Change Access (verrou config)"
+  plane: "management"
+  section: "IOS Configuration Management"
+  subsection: "Exclusive Configuration Change Access"
+  severity: "MEDIUM"
+  description: >
+    Le mode 'exclusive' empêche plusieurs administrateurs de modifier
+    la configuration simultanément, évitant les conflits et les
+    écrasements involontaires. 'auto' verrouille automatiquement lors
+    d'une session 'configure terminal'.
+  remediation: >
+    configuration exclusive auto
+  reference: "Cisco Harden IOS-XE - Exclusive Configuration"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^configuration exclusive (auto|manual)"
+        description: "Verrou de configuration exclusive activé"
+
+- id: "CISCO-CFG-SIGNED-001"
+  title: "Cisco IOS Software signé numériquement vérifié"
+  plane: "management"
+  section: "IOS Configuration Management"
+  subsection: "Digitally Signed Cisco Software"
+  severity: "HIGH"
+  description: >
+    Depuis IOS XE 3.x, Cisco signe numériquement les images IOS.
+    La commande 'file verify auto' force la vérification de la
+    signature cryptographique de chaque image avant le boot,
+    empêchant l'exécution d'images modifiées ou corrompues (rootkits).
+  remediation: >
+    file verify auto
+    ! Vérification manuelle : verify /sha512 flash:<image>.bin
+  reference: "Cisco Harden IOS-XE - Digitally Signed Software"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^file verify auto"
+        description: "Vérification automatique des signatures d'images activée"
+
+- id: "CISCO-CFG-CHANGE-001"
+  title: "Configuration Change Notification and Logging (archive logging)"
+  plane: "management"
+  section: "IOS Configuration Management"
+  subsection: "Configuration Change Notification and Logging"
+  severity: "MEDIUM"
+  description: >
+    La fonctionnalité 'archive log config' enregistre chaque commande
+    de configuration avec l'identité de l'utilisateur, la date/heure
+    et le terminal source. Indispensable pour l'audit et la forensique.
+    Les notifications SNMP/syslog alertent en temps réel sur les
+    changements de configuration.
+  remediation: >
+    archive
+      log config
+        logging enable
+        logging size 200
+        notify syslog contenttype plaintext
+        hidekeys
+  reference: "Cisco Harden IOS-XE - Configuration Change Notification"
+  applicable_if: null
+  check_type: "block_regex"
+  context:
+    block: "^archive"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "log config"
+        description: "Bloc log config dans archive"
+      - pattern: "logging enable"
+        description: "Logging des changements de config activé"
+
+# -------------------------------------------------------------------
+# SUBSECTION : Memory Leak Detector
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-MLD-001"
+  title: "Memory Leak Detector activé"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Memory Leak Detector"
+  severity: "LOW"
+  description: >
+    Le Memory Leak Detector (MLD) surveille les allocations mémoire
+    et détecte les fuites qui épuiseraient progressivement la mémoire
+    disponible. Utile pour les équipements soumis à un trafic intensif
+    ou tournant depuis longtemps sans redémarrage.
+  remediation: >
+    memory-size iomem 15
+    ! Activer la détection via :
+    debug memory leak <taille_min_bytes>
+    ! En production, utiliser les seuils memory free low-watermark
+    ! plutôt que le mode debug.
+  reference: "Cisco Harden IOS-XE - Memory Leak Detector"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^memory free low-watermark"
+        description: "Surveillance mémoire configurée (proxy MLD en production)"
+  notes: >
+    La détection formelle de fuites mémoire via 'debug memory leak'
+    n'est pas visible dans le running-config. On vérifie en proxy
+    la présence des seuils low-watermark comme mécanisme équivalent.
+    Marquer WARN si absent.
+
+# -------------------------------------------------------------------
+# SUBSECTION : Buffer Overflow Detection
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-BUFOVF-001"
+  title: "Détection et correction du Buffer Overflow (redzone)"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Buffer Overflow Detection and Correction of Redzone Corruption"
+  severity: "MEDIUM"
+  description: >
+    Cisco IOS inclut un mécanisme de détection de corruption mémoire
+    (redzone) qui entoure chaque bloc mémoire alloué d'une zone de
+    garde. Si cette zone est corrompue, IOS génère une trace et peut
+    corriger la corruption avant un crash. Activé via 'exception'
+    et les paramètres de crashinfo.
+  remediation: >
+    exception memory ignore overflow processor
+    exception memory ignore overflow io
+  reference: "Cisco Harden IOS-XE - Buffer Overflow Detection"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^exception memory ignore overflow"
+        description: "Gestion de l'overflow mémoire configurée"
+  notes: >
+    Marquer WARN si absent. Non critique sur toutes les plateformes.
+    Vérifier la disponibilité de la commande sur la version IOS cible.
+
+# -------------------------------------------------------------------
+# SUBSECTION : Enhanced Crashinfo File Collection
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-CRASH-001"
+  title: "Enhanced Crashinfo File Collection configurée"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Enhanced Crashinfo File Collection"
+  severity: "LOW"
+  description: >
+    Les fichiers crashinfo contiennent des données diagnostiques
+    essentielles (stack trace, état mémoire, registres) en cas de
+    crash IOS. La configuration 'exception crash-info' garantit
+    que ces données sont sauvegardées localement pour analyse
+    post-incident.
+  remediation: >
+    exception crashinfo file flash:crashinfo
+    exception crashinfo maximum files 3
+  reference: "Cisco Harden IOS-XE - Enhanced Crashinfo"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^exception crashinfo"
+        description: "Collecte de crashinfo configurée"
+  notes: >
+    Marquer WARN si absent. Priorité basse mais utile pour la
+    forensique post-incident. Certaines plateformes activent
+    crashinfo par défaut.
+
+# -------------------------------------------------------------------
+# SUBSECTION : SMI — Zero-Touch Deployment Only
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-SMI-002"
+  title: "SMI Zero-Touch : restreindre à l'interface de management"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Customers Who Leverage the SMI Feature Only for Zero-Touch Deployment"
+  severity: "HIGH"
+  description: >
+    Si Smart Install est utilisé uniquement pour le déploiement
+    initial (Zero-Touch), restreindre l'accès SMI (port TCP 4786)
+    à l'interface de management uniquement via une iACL.
+    Bloquer TCP 4786 en provenance de toute autre source.
+  remediation: >
+    ip access-list extended iACL-INBOUND
+      permit tcp <ip_directeur_smi> any eq 4786
+      deny   tcp any any eq 4786 log
+  reference: "Cisco Security Advisory cisco-sa-20180328-smi2"
+  applicable_if: "^vstack"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "iACL|INBOUND|INFRA"
+    require_entries:
+      - pattern: "deny\\s+tcp\\s+any\\s+any\\s+eq\\s+4786"
+        description: "TCP 4786 (SMI) bloqué dans l'iACL sauf sources autorisées"
+
+- id: "CISCO-MGT-SMI-003"
+  title: "SMI Full Feature : authentification + chiffrement activés"
+  plane: "management"
+  section: "General Management Plane Hardening"
+  subsection: "Customers Who Leverage the SMI Feature for More Than Zero-Touch Deployment"
+  severity: "HIGH"
+  description: >
+    Si SMI est utilisé pour des fonctions avancées (gestion continue),
+    configurer l'authentification et le chiffrement sur la session SMI
+    avec un certificat PKI. Sans ces contrôles, la session SMI est
+    vulnérable à l'interception et à l'injection de commandes.
+  remediation: >
+    vstack
+    vstack director <ip_directeur>
+    vstack startup-vlan <vlan>
+    ! Activer l'authentification PKI sur le directeur SMI
+  reference: "Cisco Smart Install Configuration Guide - Security"
+  applicable_if: "^vstack director"
+  check_type: "block_regex"
+  context:
+    block: "^vstack"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "vstack director \\S+"
+        description: "Directeur SMI explicitement spécifié"
+  notes: >
+    Vérification partielle : confirmer que l'accès SMI est restreint
+    par iACL (voir CISCO-MGT-SMI-002). La configuration PKI du directeur
+    ne se voit pas dans le running-config du client.
+
+# -------------------------------------------------------------------
+# SECTION : Secure Interactive Sessions — éléments manquants
+# -------------------------------------------------------------------
+
+- id: "CISCO-MGT-CPP-001"
+  title: "Control Plane Protection (CPPr) — classes de trafic management"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Control Plane Protection"
+  severity: "HIGH"
+  description: >
+    Control Plane Protection (CPPr) est la version granulaire de CoPP.
+    Elle divise le trafic du plan de contrôle en sous-interfaces
+    (host, transit, cef-exception) et permet des politiques de
+    policing distinctes par type de trafic. Complémentaire de CoPP.
+  remediation: >
+    control-plane host
+      service-policy input CPPr-HOST-POLICY
+    control-plane transit
+      service-policy input CPPr-TRANSIT-POLICY
+  reference: "Cisco Harden IOS-XE - Control Plane Protection"
+  applicable_if: "^control-plane"
+  check_type: "block_regex"
+  context:
+    block: "control-plane host"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "service-policy input \\S+"
+        description: "Politique CPPr appliquée sur control-plane host"
+
+- id: "CISCO-MGT-HTTPS-001"
+  title: "Sessions de management chiffrées (HTTPS / SSH uniquement)"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Encrypt Management Sessions"
+  severity: "CRITICAL"
+  description: >
+    HTTP en clair ne doit jamais être utilisé pour la gestion.
+    Si l'interface web est nécessaire, uniquement HTTPS avec TLS 1.2
+    minimum. Le port HTTPS doit être restreint par ACL.
+    Telnet doit être remplacé par SSH sur toutes les lignes VTY.
+  remediation: >
+    no ip http server
+    ip http secure-server
+    ip http secure-port 443
+    ip http access-class <ACL_MGMT>
+    ip http authentication local
+  reference: "Cisco Harden IOS-XE - Encrypt Management Sessions"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^no ip http server"
+        description: "HTTP non sécurisé désactivé"
+    prohibit:
+      - pattern: "^ip http server$"
+        description: "HTTP en clair ne doit pas être actif"
+
+- id: "CISCO-MGT-VTY-TRANS-001"
+  title: "Transport autorisé sur VTY/TTY limité à SSH"
+  plane: "management"
+  section: "Secure Interactive Management Sessions"
+  subsection: "Control Transport for vty and tty Lines"
+  severity: "CRITICAL"
+  description: >
+    La commande 'transport input' contrôle quels protocoles sont
+    acceptés en entrée sur les lignes VTY. 'transport input all'
+    ou 'transport input telnet ssh' autorisent Telnet — inacceptable.
+    Seul 'transport input ssh' est admis. De même, 'transport output'
+    doit interdire Telnet en sortie des lignes de management.
+  remediation: >
+    line vty 0 4
+      transport input ssh
+      transport output ssh
+    line vty 5 15
+      transport input ssh
+      transport output ssh
+  reference: "Cisco Harden IOS-XE - Control Transport vty/tty"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "line vty \\d+"
+    all_instances: true
+  conditions:
+    require:
+      - pattern: "transport input ssh"
+        description: "Transport input limité à SSH"
+    prohibit:
+      - pattern: "transport input (all|telnet)"
+        description: "Telnet ne doit pas être dans transport input"
+      - pattern: "transport input none"
+        description: "'transport input none' désactiverait SSH — interdit"
+
+# -------------------------------------------------------------------
+# SECTION : Fortify SNMP — éléments manquants
+# -------------------------------------------------------------------
+
+- id: "CISCO-SNMP-IACL-001"
+  title: "Infrastructure ACL filtrant le trafic SNMP"
+  plane: "management"
+  section: "Fortify SNMP"
+  subsection: "Infrastructure ACLs"
+  severity: "HIGH"
+  description: >
+    En complément de la community ACL (par string), une iACL au niveau
+    de l'interface doit bloquer toute requête SNMP en provenance de
+    sources non autorisées avant même qu'elle atteigne le processus
+    SNMP. Protège contre les scans et les exploits SNMP.
+  remediation: >
+    ip access-list extended iACL-INBOUND
+      permit udp <plage_nms> any eq 161
+      permit udp <plage_nms> any eq 162
+      deny   udp any any eq 161 log
+      deny   udp any any eq 162 log
+  reference: "Cisco Harden IOS-XE - SNMP Infrastructure ACLs"
+  applicable_if: "^snmp-server"
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "iACL|INBOUND|INFRA"
+    require_entries:
+      - pattern: "deny\\s+udp\\s+any\\s+any\\s+eq\\s+16[12]"
+        description: "SNMP UDP 161/162 bloqué dans l'iACL pour sources non autorisées"
+
+- id: "CISCO-SNMP-VIEW-001"
+  title: "SNMP Views configurées (restriction OID MIB)"
+  plane: "management"
+  section: "Fortify SNMP"
+  subsection: "SNMP Views"
+  severity: "HIGH"
+  description: >
+    Sans SNMP View, un utilisateur/community SNMP peut accéder à
+    l'ensemble des OID de la MIB, y compris les données sensibles
+    (configurations, compteurs de sécurité). Les Views restreignent
+    l'accès à un sous-ensemble de la MIB nécessaire.
+    Minimum : exclure la sous-arbre 'system' des vues en écriture.
+  remediation: >
+    snmp-server view SNMP-READ-VIEW internet included
+    snmp-server view SNMP-READ-VIEW internet.6.3.15 excluded
+    snmp-server group <groupe> v3 priv read SNMP-READ-VIEW
+  reference: "Cisco Harden IOS-XE - SNMP Views"
+  applicable_if: "^snmp-server"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^snmp-server view \\S+ \\S+ included"
+        description: "Au moins une SNMP View restrictive configurée"
+
+- id: "CISCO-SNMP-MPP-001"
+  title: "SNMP restreint à l'interface de management (MPP)"
+  plane: "management"
+  section: "Fortify SNMP"
+  subsection: "Management Plane Protection"
+  severity: "HIGH"
+  description: >
+    Via Management Plane Protection, le service SNMP peut être
+    restreint à une interface de management dédiée uniquement.
+    Tout paquet SNMP arrivant sur une autre interface est rejeté
+    avant traitement, réduisant massivement la surface d'attaque.
+  remediation: >
+    control-plane host
+      management-interface <interface_mgmt> allow snmp
+  reference: "Cisco Harden IOS-XE - SNMP MPP"
+  applicable_if: "^snmp-server"
+  check_type: "block_regex"
+  context:
+    block: "control-plane host"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "management-interface \\S+ allow .*(snmp)"
+        description: "SNMP autorisé uniquement sur l'interface de management via MPP"
+
+# -------------------------------------------------------------------
+# SECTION : Logging — règle manquante
+# -------------------------------------------------------------------
+
+- id: "CISCO-LOG-LEVEL-001"
+  title: "Niveau de logging ≥ informational (niveau 6)"
+  plane: "management"
+  section: "Logging Best Practices"
+  subsection: "Logging Level"
+  severity: "MEDIUM"
+  description: >
+    Le niveau de logging détermine quels messages sont capturés.
+    'warnings' (4) capture trop peu d'événements.
+    'informational' (6) est le minimum recommandé en production.
+    'debugging' (7) est utile en investigation mais trop verbeux
+    pour la production (impact CPU).
+  remediation: >
+    logging trap informational
+    logging buffered informational
+  reference: "Cisco Harden IOS-XE - Logging Level"
+  applicable_if: "^logging host"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^logging trap (informational|debugging|notifications)"
+        description: "Niveau de logging vers syslog ≥ informational"
+    prohibit:
+      - pattern: "^logging trap (emergencies|alerts|critical|errors|warnings)"
+        description: "Niveau trop bas — des événements importants sont manqués"

@@ -1,0 +1,583 @@
+# ============================================================
+#  CONTROL PLANE — CISCO IOS / IOS-XE COMPLIANCE RULES
+#  Reference : Cisco "Harden IOS/IOS-XE Devices" Guide
+#  Total rules in this file : 18
+# ============================================================
+#
+# The Control Plane processes packets needed to operate network
+# protocols (routing, spanning tree, keepalives, etc.).
+# Protecting it prevents CPU exhaustion and route injection attacks.
+# ============================================================
+
+# -------------------------------------------------------------------
+# SECTION : General Control Plane Hardening
+# -------------------------------------------------------------------
+
+- id: "CISCO-CP-ICMP-001"
+  title: "ICMP Redirects désactivés sur toutes les interfaces"
+  plane: "control"
+  section: "General Control Plane Hardening"
+  subsection: "IP ICMP Redirects"
+  severity: "HIGH"
+  description: >
+    Les messages ICMP Redirect informent les hôtes d'une meilleure
+    route. Un attaquant peut exploiter cette fonctionnalité pour
+    rediriger le trafic vers une machine sous son contrôle (MITM).
+    'no ip redirects' doit être appliqué sur toutes les interfaces
+    actives, notamment les interfaces externe/transit.
+  remediation: >
+    Sur chaque interface active :
+      interface <X>
+        no ip redirects
+  reference: "Cisco Harden IOS-XE - ICMP Redirects"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "interface (?!Loopback|Null|Tunnel)"
+    all_instances: true
+  conditions:
+    require:
+      - pattern: "no ip redirects"
+        description: "ip redirects désactivé sur cette interface"
+    prohibit:
+      - pattern: "^\\s*ip redirects$"
+        description: "ip redirects ne doit pas être activé explicitement"
+  notes: >
+    Le parseur doit identifier toutes les interfaces physiques/SVI actives
+    (non Loopback, non Null, non shutdown) et vérifier que chacune
+    contient 'no ip redirects'.
+
+- id: "CISCO-CP-ICMP-002"
+  title: "ICMP Unreachables désactivés sur interfaces exposées"
+  plane: "control"
+  section: "General Control Plane Hardening"
+  subsection: "ICMP Unreachables"
+  severity: "MEDIUM"
+  description: >
+    Les messages ICMP Destination Unreachable révèlent des informations
+    sur la topologie interne et peuvent être utilisés pour mapper le réseau.
+    À désactiver sur les interfaces connectées à des réseaux non fiables.
+    Peut être conservé sur les interfaces internes de confiance.
+  remediation: >
+    interface <interface_externe>
+      no ip unreachables
+  reference: "Cisco Harden IOS-XE - ICMP Unreachables"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "no ip unreachables"
+        description: "Au moins une interface avec ip unreachables désactivé"
+  notes: >
+    Vérification souple : au moins une occurrence de 'no ip unreachables'
+    dans la config. Une vérification stricte nécessiterait que toutes les
+    interfaces externes l'aient. Marquer WARN si absent.
+
+- id: "CISCO-CP-PROXYARP-001"
+  title: "Proxy ARP désactivé sur toutes les interfaces"
+  plane: "control"
+  section: "General Control Plane Hardening"
+  subsection: "Proxy ARP"
+  severity: "MEDIUM"
+  description: >
+    Le Proxy ARP permet au routeur de répondre aux requêtes ARP à la
+    place d'autres hôtes sur d'autres segments. Cela peut faciliter
+    les attaques ARP spoofing et les détournements de trafic.
+    Doit être désactivé sur toutes les interfaces sauf besoin explicite.
+  remediation: >
+    Sur chaque interface :
+      interface <X>
+        no ip proxy-arp
+  reference: "Cisco Harden IOS-XE - Proxy ARP"
+  applicable_if: null
+  check_type: "block_all"
+  context:
+    blocks:
+      - "interface (?!Loopback|Null)"
+    all_instances: true
+  conditions:
+    require:
+      - pattern: "no ip proxy-arp"
+        description: "Proxy ARP désactivé sur cette interface"
+
+# -------------------------------------------------------------------
+# SECTION : Limit CPU Impact — Control Plane Policing
+# -------------------------------------------------------------------
+
+- id: "CISCO-CP-COPP-001"
+  title: "Control Plane Policing (CoPP) configuré et appliqué"
+  plane: "control"
+  section: "Limit CPU Impact of Control Plane Traffic"
+  subsection: "Control Plane Policing"
+  severity: "CRITICAL"
+  description: >
+    CoPP protège le CPU du routeur contre les inondations de paquets
+    destinés au plan de contrôle (BGP, OSPF, SNMP, SSH, ICMP vers le
+    routeur). Sans CoPP, une simple inondation ICMP peut rendre
+    l'équipement inaccessible voire le faire crasher.
+    La politique doit être appliquée en entrée du control-plane.
+  remediation: >
+    policy-map COPP-POLICY
+      class CRITICAL-TRAFFIC
+        police rate 32000 bps conform-action transmit exceed-action drop
+    !
+    control-plane
+      service-policy input COPP-POLICY
+  reference: "Cisco Harden IOS-XE - CoPP"
+  applicable_if: null
+  check_type: "block_regex"
+  context:
+    block: "^control-plane$"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "service-policy input \\S+"
+        description: "Politique CoPP appliquée en entrée du control-plane"
+
+- id: "CISCO-CP-RACL-001"
+  title: "Receive ACLs (rACL) configurées pour filtrage pré-CPU"
+  plane: "control"
+  section: "Limit CPU Impact of Control Plane Traffic"
+  subsection: "Receive ACLs"
+  severity: "HIGH"
+  description: >
+    Sur les plateformes qui les supportent (CRS, ASR9K, certains Catalyst),
+    les Receive ACLs filtrent le trafic destiné au CPU avant qu'il
+    soit traité. Plus efficaces que CoPP car le filtrage est effectué
+    dans le hardware ASIC et non dans les processus IOS.
+  remediation: >
+    Vérifier le support de la plateforme avec :
+      show platform hardware ? | include receive
+    Appliquer une rACL dans la policy-map CoPP si supporté.
+  reference: "Cisco Harden IOS-XE - Receive ACLs"
+  applicable_if: "^control-plane"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^ip access-list extended (?:rACL|RECEIVE|COPP)"
+        description: "ACL de type rACL ou CoPP définie"
+  notes: >
+    Règle de type WARN si absente, pas FAIL strict, car le support
+    dépend de la plateforme matérielle.
+
+# -------------------------------------------------------------------
+# SECTION : Secure BGP
+# -------------------------------------------------------------------
+
+- id: "CISCO-BGP-GTSM-001"
+  title: "BGP GTSM — TTL Security (hops = 1 pour eBGP)"
+  plane: "control"
+  section: "Secure BGP"
+  subsection: "TTL-based Security Protections (GTSM)"
+  severity: "HIGH"
+  description: >
+    GTSM (Generalized TTL Security Mechanism, RFC 5082) force le routeur
+    à n'accepter les sessions BGP que de voisins situés à exactement
+    1 saut IP. Tout paquet BGP spoofé depuis l'Internet arrivera avec
+    un TTL < 255, ce qui le fera rejeter automatiquement.
+  remediation: >
+    router bgp <AS>
+      neighbor <ip_voisin> ttl-security hops 1
+  reference: "RFC 5082 / Cisco Harden IOS-XE - BGP GTSM"
+  applicable_if: "^router bgp "
+  check_type: "block_regex"
+  context:
+    block: "router bgp \\d+"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "neighbor \\S+ ttl-security hops \\d+"
+        description: "GTSM TTL-security configuré sur au moins un voisin eBGP"
+
+- id: "CISCO-BGP-MD5-001"
+  title: "Authentification MD5 sur toutes les sessions BGP"
+  plane: "control"
+  section: "Secure BGP"
+  subsection: "BGP Peer Authentication with MD5"
+  severity: "HIGH"
+  description: >
+    L'authentification MD5 sur BGP (RFC 2385) protège contre les
+    injections de fausses mises à jour BGP. Sans authentification,
+    un attaquant en position MITM peut injecter des routes et
+    détourner le trafic Internet (BGP hijacking).
+  remediation: >
+    router bgp <AS>
+      neighbor <ip_voisin> password <secret_fort>
+  reference: "RFC 2385 / Cisco Harden IOS-XE - BGP Auth"
+  applicable_if: "^router bgp "
+  check_type: "block_regex"
+  context:
+    block: "router bgp \\d+"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "neighbor \\S+ password "
+        description: "Mot de passe MD5 configuré sur au moins un voisin BGP"
+
+- id: "CISCO-BGP-MAXPFX-001"
+  title: "BGP Maximum Prefixes limité par voisin"
+  plane: "control"
+  section: "Secure BGP"
+  subsection: "Configure Maximum Prefixes"
+  severity: "HIGH"
+  description: >
+    Sans limite de préfixes, un voisin BGP défaillant ou malveillant
+    peut envoyer des millions de routes, saturant la table de routage
+    et provoquant un crash mémoire ou CPU. 'maximum-prefix' définit
+    un seuil d'avertissement et un seuil de déconnexion automatique.
+  remediation: >
+    router bgp <AS>
+      neighbor <ip_voisin> maximum-prefix 1000 80
+      ! 1000 préfixes max, avertissement à 80%
+  reference: "Cisco Harden IOS-XE - BGP Maximum Prefix"
+  applicable_if: "^router bgp "
+  check_type: "block_regex"
+  context:
+    block: "router bgp \\d+"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "neighbor \\S+ maximum-prefix \\d+"
+        description: "Limite de préfixes configurée sur au moins un voisin"
+
+- id: "CISCO-BGP-PFXLIST-001"
+  title: "Filtrage BGP entrant/sortant via prefix-lists"
+  plane: "control"
+  section: "Secure BGP"
+  subsection: "Filter BGP Prefixes with Prefix Lists"
+  severity: "HIGH"
+  description: >
+    Les prefix-lists BGP limitent les routes acceptées en entrée
+    (évite la pollution de la table de routage locale) et les routes
+    annoncées en sortie (évite la fuite de routes internes).
+    Elles sont plus efficaces que les access-lists pour le filtrage BGP.
+  remediation: >
+    ip prefix-list IN-FILTER seq 5 permit <plage_legitime>/8 le 24
+    ip prefix-list OUT-FILTER seq 5 permit <mon_espace_adresse>/16
+    !
+    router bgp <AS>
+      neighbor <ip> prefix-list IN-FILTER in
+      neighbor <ip> prefix-list OUT-FILTER out
+  reference: "Cisco Harden IOS-XE - BGP Prefix List"
+  applicable_if: "^router bgp "
+  check_type: "block_regex"
+  context:
+    block: "router bgp \\d+"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "neighbor \\S+ prefix-list \\S+ in"
+        description: "Prefix-list en entrée configurée"
+      - pattern: "neighbor \\S+ prefix-list \\S+ out"
+        description: "Prefix-list en sortie configurée"
+
+# -------------------------------------------------------------------
+# SECTION : Secure Interior Gateway Protocols (IGP)
+# -------------------------------------------------------------------
+
+- id: "CISCO-IGP-MD5-001"
+  title: "Authentification MD5/SHA sur OSPF et EIGRP"
+  plane: "control"
+  section: "Secure Interior Gateway Protocols"
+  subsection: "Routing Protocol Authentication with MD5"
+  severity: "CRITICAL"
+  description: >
+    Sans authentification, n'importe quel équipement du segment peut
+    injecter de fausses mises à jour de routage. Pour OSPF : utiliser
+    l'authentification message-digest (MD5) par zone ou par interface.
+    Pour EIGRP : utiliser des key-chains avec MD5 sur chaque interface.
+    OSPF SHA-HMAC (via ip ospf authentication key-chain) est préférable.
+  remediation: >
+    === OSPF ===
+    router ospf <process>
+      area <X> authentication message-digest
+    interface <routing_intf>
+      ip ospf message-digest-key 1 md5 <clé>
+    === EIGRP ===
+    key chain EIGRP-KEYS
+      key 1
+        key-string <secret>
+    interface <routing_intf>
+      ip authentication mode eigrp <AS> md5
+      ip authentication key-chain eigrp <AS> EIGRP-KEYS
+  reference: "Cisco Harden IOS-XE - IGP Authentication"
+  applicable_if: null
+  check_type: "multi_regex"
+  conditions:
+    require_one_of:
+      - pattern: "area \\d+ authentication message-digest"
+        description: "Authentification OSPF MD5 configurée par zone"
+      - pattern: "ip ospf message-digest-key \\d+ md5 "
+        description: "Clé MD5 OSPF configurée sur interface"
+      - pattern: "ip authentication mode eigrp \\d+ md5"
+        description: "Authentification EIGRP MD5 configurée"
+  notes: >
+    Applicable_if conditionnel : évaluer OSPF uniquement si 'router ospf'
+    existe, EIGRP uniquement si 'router eigrp' ou 'router eigrp' (NAMED)
+    existe. Marquer NOT_APPLICABLE si aucun IGP n'est configuré.
+
+- id: "CISCO-IGP-PASSIVE-001"
+  title: "Passive-interface default sur protocoles IGP"
+  plane: "control"
+  section: "Secure Interior Gateway Protocols"
+  subsection: "Passive-Interface Commands"
+  severity: "MEDIUM"
+  description: >
+    La configuration 'passive-interface default' désactive l'envoi de
+    mises à jour de routage sur toutes les interfaces par défaut.
+    Seules les interfaces de routage nécessaires sont ensuite activées
+    avec 'no passive-interface'. Les interfaces utilisateurs/DMZ ne
+    doivent jamais recevoir de mises à jour de routage.
+  remediation: >
+    router ospf <process>
+      passive-interface default
+      no passive-interface <interface_routage>
+  reference: "Cisco Harden IOS-XE - Passive Interface"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "passive-interface default"
+        description: "passive-interface default configuré dans au moins un protocole IGP"
+  notes: >
+    Applicable si 'router ospf', 'router eigrp' ou 'router rip' existe.
+    Marquer NOT_APPLICABLE si aucun IGP dynamique n'est configuré.
+
+# -------------------------------------------------------------------
+# SECTION : Secure First Hop Redundancy Protocols (FHRP)
+# -------------------------------------------------------------------
+
+- id: "CISCO-FHRP-AUTH-001"
+  title: "Authentification MD5 sur HSRP / VRRP / GLBP"
+  plane: "control"
+  section: "Secure First Hop Redundancy Protocols"
+  subsection: "FHRP Authentication"
+  severity: "HIGH"
+  description: >
+    Sans authentification FHRP, un attaquant sur le même segment L2
+    peut envoyer de faux messages HSRP/VRRP avec une priorité plus haute
+    et devenir le routeur actif, interceptant tout le trafic du segment
+    (attaque FHRP hijacking). MD5 + key-chain empêche cette attaque.
+  remediation: >
+    === HSRP ===
+    interface <X>
+      standby <group> authentication md5 key-string <secret>
+    === VRRP ===
+    interface <X>
+      vrrp <group> authentication md5 key-string <secret>
+  reference: "Cisco Harden IOS-XE - FHRP Authentication"
+  applicable_if: "standby \\d+|vrrp \\d+|glbp \\d+"
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "standby \\d+ authentication md5|vrrp \\d+ authentication md5|glbp \\d+ authentication"
+        description: "Authentification MD5 sur protocole FHRP détecté"
+  notes: >
+    Applicable uniquement si HSRP, VRRP ou GLBP est configuré.
+    Chercher 'standby X', 'vrrp X' ou 'glbp X' pour déterminer applicable_if.
+
+# -------------------------------------------------------------------
+# SECTION : Limit CPU Impact — règles manquantes
+# -------------------------------------------------------------------
+
+- id: "CISCO-CP-IACL-001"
+  title: "Infrastructure ACLs filtrant le trafic vers le Control Plane"
+  plane: "control"
+  section: "Limit CPU Impact of Control Plane Traffic"
+  subsection: "Infrastructure ACLs"
+  severity: "HIGH"
+  description: >
+    Les iACLs appliquées sur les interfaces externes bloquent le trafic
+    non sollicité à destination des adresses IP du routeur (loopbacks,
+    interfaces physiques) avant qu'il ne consomme des ressources CPU.
+    Elles filtrent notamment BGP, OSPF, SSH, SNMP depuis des sources
+    non autorisées.
+  remediation: >
+    ip access-list extended iACL-INBOUND
+      remark --- Protocoles de routage depuis voisins légitimes ---
+      permit tcp <voisins_bgp> host <ip_routeur> eq 179
+      permit ospf <voisins_ospf> host <ip_routeur>
+      remark --- Management depuis hôtes autorisés ---
+      permit tcp <mgmt_hosts> host <ip_routeur> eq 22
+      permit udp <mgmt_hosts> host <ip_routeur> eq 161
+      deny   ip any <espace_adresse_infrastructure> log
+    interface <interface_externe>
+      ip access-group iACL-INBOUND in
+  reference: "Cisco Harden IOS-XE - Infrastructure ACLs (Control Plane)"
+  applicable_if: null
+  check_type: "acl_content"
+  conditions:
+    acl_name_pattern: "iACL|INFRA|INBOUND"
+    require_entries:
+      - pattern: "deny\\s+ip\\s+any\\s+.+log"
+        description: "Règle deny avec log dans l'iACL protégeant le control plane"
+
+- id: "CISCO-CP-CPP-001"
+  title: "Control Plane Protection (CPPr) granulaire configuré"
+  plane: "control"
+  section: "Limit CPU Impact of Control Plane Traffic"
+  subsection: "Control Plane Protection"
+  severity: "HIGH"
+  description: >
+    CPPr (Control Plane Protection) étend CoPP avec une granularité
+    par sous-interface : host (trafic destiné au routeur), transit
+    (trafic forwardé process-switched), cef-exception (paquets
+    nécessitant une exception CEF). Permet des limites distinctes
+    par protocole et par type de paquets.
+  remediation: >
+    policy-map CPPr-HOST
+      class SSH-CLASS
+        police rate 100000 bps
+      class ICMP-CLASS
+        police rate 8000 bps
+      class class-default
+        drop
+    control-plane host
+      service-policy input CPPr-HOST
+  reference: "Cisco Harden IOS-XE - Control Plane Protection (CPPr)"
+  applicable_if: "^control-plane"
+  check_type: "block_regex"
+  context:
+    block: "control-plane host"
+    all_instances: false
+  conditions:
+    require:
+      - pattern: "service-policy input \\S+"
+        description: "Politique CPPr appliquée sur control-plane host"
+  notes: >
+    CPPr est disponible sur IOS 12.4(4)T+ et IOS XE. Vérifier le
+    support plateforme. La présence de 'control-plane host' avec
+    'service-policy' est le signal de détection.
+
+- id: "CISCO-CP-HRL-001"
+  title: "Hardware Rate Limiters configurés pour trafic CPU anormal"
+  plane: "control"
+  section: "Limit CPU Impact of Control Plane Traffic"
+  subsection: "Hardware Rate Limiters"
+  severity: "MEDIUM"
+  description: >
+    Sur les plateformes Catalyst avec ASIC (ex. Supervisor 720, ASR),
+    les Hardware Rate Limiters (HRL) dropp ent les paquets anomaux
+    dans le silicon avant qu'ils n'atteignent le CPU IOS. Exemples :
+    trafic multicast non RPF-vérifié, paquets ARP excessifs, TTL=1.
+    Configurés via 'mls rate-limit' ou 'hw-module'.
+  remediation: >
+    ! Varie selon la plateforme — exemple Catalyst 6500 :
+    mls rate-limit layer2 pdu 1000 500
+    mls rate-limit all ttl-failure 100 10
+    mls rate-limit all mtu-failure 100 10
+  reference: "Cisco Harden IOS-XE - Hardware Rate Limiters"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require:
+      - pattern: "^mls rate-limit|^hw-module rate-limit|^platform rate-limit"
+        description: "Hardware rate limiter configuré"
+  notes: >
+    Marquer NOT_APPLICABLE sur les routeurs ISR/ASR qui n'ont pas
+    de commande 'mls rate-limit'. Marquer WARN sur les switches
+    Catalyst si absent.
+
+# -------------------------------------------------------------------
+# SECTION : BGP — règle manquante
+# -------------------------------------------------------------------
+
+- id: "CISCO-BGP-ASPTH-001"
+  title: "Filtrage BGP par AS-Path Access Lists (anti-hijack)"
+  plane: "control"
+  section: "Secure BGP"
+  subsection: "Filter BGP Prefixes with Autonomous System Path Access Lists"
+  severity: "HIGH"
+  description: >
+    Les AS-Path ACLs filtrent les routes BGP en fonction du chemin
+    d'AS traversé. Permettent de rejeter des routes dont le chemin
+    d'AS est anormalement long, contient des AS privés (64512-65535),
+    ou provient d'AS non attendus. Complément indispensable des
+    prefix-lists pour la sécurité du routage inter-domaine.
+  remediation: >
+    ip as-path access-list 1 deny _65[0-9]{3}$
+    ip as-path access-list 1 deny _6[4-9][0-9]{3}$
+    ip as-path access-list 1 permit .*
+    !
+    router bgp <AS>
+      neighbor <ip_voisin> filter-list 1 in
+  reference: "Cisco Harden IOS-XE - BGP AS-Path Filter"
+  applicable_if: "^router bgp "
+  check_type: "multi_regex"
+  conditions:
+    require:
+      - pattern: "^ip as-path access-list \\d+ (permit|deny)"
+        description: "AS-Path ACL définie"
+      - pattern: "neighbor \\S+ filter-list \\d+ in"
+        description: "AS-Path filter appliqué en entrée sur un voisin BGP"
+
+# -------------------------------------------------------------------
+# SECTION : IGP — règles manquantes
+# -------------------------------------------------------------------
+
+- id: "CISCO-IGP-RTFILT-001"
+  title: "Filtrage des routes IGP (distribute-list / prefix-list)"
+  plane: "control"
+  section: "Secure Interior Gateway Protocols"
+  subsection: "Route Filtering"
+  severity: "HIGH"
+  description: >
+    Même avec l'authentification MD5, un équipement compromis sur le
+    même domaine IGP peut injecter des routes indésirables. Les
+    distribute-lists ou prefix-lists IGP filtrent les routes acceptées
+    et annoncées, limitant la portée d'une éventuelle injection.
+  remediation: >
+    ip prefix-list IGP-FILTER seq 10 deny 0.0.0.0/0 le 7
+    ip prefix-list IGP-FILTER seq 20 deny 10.0.0.0/8 ge 30
+    ip prefix-list IGP-FILTER seq 100 permit 0.0.0.0/0 le 32
+    !
+    router ospf <process>
+      distribute-list prefix IGP-FILTER in
+  reference: "Cisco Harden IOS-XE - IGP Route Filtering"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require_one_of:
+      - pattern: "distribute-list (prefix \\S+|\\d+) in"
+        description: "Distribute-list appliquée en entrée IGP"
+      - pattern: "neighbor \\S+ route-map \\S+ in"
+        description: "Route-map appliquée en entrée sur un voisin"
+  notes: >
+    Applicable si OSPF, EIGRP ou RIP est configuré. Marquer
+    NOT_APPLICABLE si aucun protocole IGP dynamique n'est présent.
+
+- id: "CISCO-IGP-RESC-001"
+  title: "Limitation des ressources consommées par le processus de routage"
+  plane: "control"
+  section: "Secure Interior Gateway Protocols"
+  subsection: "Routing Process Resource Consumption"
+  severity: "MEDIUM"
+  description: >
+    Un protocole IGP soumis à une attaque par injection massive de routes
+    ou à un voisin instable peut consommer tout le CPU disponible.
+    Les mécanismes de protection incluent : SPF throttling (OSPF),
+    distance administrative filtrée, et max-lsa pour OSPF.
+  remediation: >
+    ! OSPF SPF throttling
+    router ospf <process>
+      timers throttle spf 50 200 5000
+      timers throttle lsa 50 200 5000
+      max-lsa 12000 75 warning-only
+    ! EIGRP
+    router eigrp <AS>
+      timers active-time 3
+  reference: "Cisco Harden IOS-XE - Routing Process Resource Consumption"
+  applicable_if: null
+  check_type: "global_regex"
+  conditions:
+    require_one_of:
+      - pattern: "timers throttle spf \\d+"
+        description: "OSPF SPF throttling configuré"
+      - pattern: "max-lsa \\d+"
+        description: "OSPF max-LSA configuré"
+      - pattern: "timers active-time \\d+"
+        description: "EIGRP active-time configuré"
+  notes: >
+    Applicable si OSPF ou EIGRP est configuré. Marquer NOT_APPLICABLE
+    si aucun IGP dynamique n'est présent.

@@ -1,0 +1,311 @@
+! ============================================================
+! Sample Cisco IOS-XE Running Configuration — TEST DEVICE
+! Hostname : ROUTER-CORE-01
+! Platform : Cisco CSR1000v / IOS XE 17.6.1
+! ============================================================
+!
+hostname ROUTER-CORE-01
+!
+! --- Boot / Image hardening ---
+! MISSING: file verify auto        (CISCO-CFG-SIGNED-001 → FAIL)
+! MISSING: secure boot-image       (CISCO-CFG-RESILIENT-001 → FAIL)
+!
+! --- Passwords ---
+enable secret 9 $9$mH1/fOabc123$realhashedvalue
+service password-encryption
+!
+username admin privilege 15 secret 9 $9$abc123xyz$hashedvalue
+username backup privilege 1 secret 9 $9$bbb222$anotherhash
+!
+aaa local authentication attempts max-fail 3
+no service password-recovery
+!
+! --- Unused services disabled ---
+no service tcp-small-servers
+no service udp-small-servers
+no service finger
+no cdp run
+no ip bootp server
+no service config
+no ip http server
+ip http secure-server
+!
+! --- Smart Install ---
+no vstack
+!
+! --- NTP ---
+ntp authenticate
+ntp authentication-key 1 md5 SuperSecretNTPKey
+ntp trusted-key 1
+ntp server 10.0.0.1 key 1
+!
+! --- Keepalives ---
+service tcp-keepalives-in
+service tcp-keepalives-out
+!
+! --- Memory thresholds ---
+memory free low-watermark processor 10240
+memory free low-watermark io 4096
+!
+! --- CPU thresholding ---
+process cpu threshold type total rising 80 interval 5 falling 60 interval 5
+!
+! --- Reserve memory for console ---
+memory reserve critical 4096
+!
+! --- Exception / buffer overflow ---
+exception memory ignore overflow processor
+exception memory ignore overflow io
+!
+exception crashinfo file flash:crashinfo
+exception crashinfo maximum files 3
+!
+! --- Configuration archive ---
+archive
+ log config
+  logging enable
+  logging size 200
+  notify syslog contenttype plaintext
+  hidekeys
+ path flash:archive
+ maximum 10
+ time-period 1440
+!
+! --- Exclusive config ---
+configuration exclusive auto
+!
+! --- AAA ---
+aaa new-model
+aaa authentication login default group tacacs+ local
+aaa authentication login CONSOLE local
+aaa authorization exec default group tacacs+ local
+aaa authorization commands 1 default group tacacs+ local
+aaa authorization commands 15 default group tacacs+ local
+aaa accounting commands 1 default start-stop group tacacs+
+aaa accounting commands 15 default start-stop group tacacs+
+aaa accounting exec default start-stop group tacacs+
+!
+! --- TACACS servers ---
+tacacs server PRIMARY
+ address ipv4 10.10.10.1
+ key 7 045802150C2E              ! TYPE-7 password — CISCO-AAA-TYPE7-001 → FAIL
+ timeout 5
+!
+tacacs server SECONDARY
+ address ipv4 10.10.10.2
+ key 7 045802150C2E              ! TYPE-7 password — CISCO-AAA-TYPE7-001 → FAIL
+ timeout 5
+!
+! --- SSH ---
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+ip ssh rsa keypair-name SSH-KEY
+!
+crypto key generate rsa modulus 2048 label SSH-KEY
+!
+! --- Management Plane Protection ---
+control-plane host
+ management-interface GigabitEthernet0/0 allow ssh https snmp
+!
+! --- Banner ---
+banner login ^
+*******************************************************************************
+*  WARNING: Unauthorized access to this system is prohibited.                 *
+*  All activities are monitored and recorded.                                 *
+*  Disconnect immediately if you are not an authorized user.                  *
+*******************************************************************************
+^
+!
+! --- SNMP ---
+! Public/private community strings REMOVED (CISCO-SNMP-COMM-001 → PASS)
+snmp-server community SECURE-READ RO 50
+snmp-server community SECURE-WRITE RW 51
+snmp-server view SNMP-READ-VIEW internet included
+snmp-server view SNMP-READ-VIEW internet.6.3.15 excluded
+snmp-server group SNMP-ADMIN v3 priv read SNMP-READ-VIEW
+snmp-server user snmpv3user SNMP-ADMIN v3 auth sha AuthPass123 priv aes 128 PrivPass456
+!
+! MISSING snmp-server community ... access [ACL] for COMM-002 → FAIL
+! (community 50/51 exist but no ACL on them)
+!
+! --- Logging ---
+logging host 10.20.30.1
+logging trap informational
+logging buffered 32768 informational
+logging source-interface Loopback0
+service timestamps log datetime msec localtime show-timezone
+service timestamps debug datetime msec localtime show-timezone
+no logging console
+no logging monitor
+!
+! --- IP global settings ---
+no ip source-route
+no ip gratuitous-arps
+ip options drop
+!
+! --- uRPF on WAN ---
+! (configured under the interface below)
+!
+! --- ACL definitions ---
+ip access-list extended iACL-INBOUND
+ remark === Infrastructure ACL - applied inbound on WAN ===
+ permit tcp 10.10.10.0 0.0.0.255 any eq 22
+ permit udp 10.20.30.0 0.0.0.255 any eq 161
+ permit udp 10.20.30.0 0.0.0.255 any eq 162
+ permit icmp 10.0.0.0 0.255.255.255 any echo
+ permit icmp 10.0.0.0 0.255.255.255 any echo-reply
+ deny   icmp any any log
+ deny   ip 10.0.0.0 0.255.255.255 any log
+ deny   ip 172.16.0.0 0.15.255.255 any log
+ deny   ip 192.168.0.0 0.0.255.255 any log
+ deny   ip 127.0.0.0 0.255.255.255 any log
+ deny   tcp any any eq 4786 log
+ deny   udp any any eq 161 log
+ deny   udp any any eq 162 log
+ permit ip any any
+!
+ip access-list extended tACL-INBOUND
+ remark === Transit ACL - applied on external interface ===
+ deny   ip any any fragments log
+ deny   ip any any option record-route log
+ deny   ip any any option traceroute log
+ deny   ip any any option timestamp log
+ deny   ip any any ttl lt 2 log
+ deny   icmp any any log
+ permit ip any any
+!
+ip access-list extended ANTI-SPOOF-IN
+ deny ip 10.0.0.0 0.255.255.255 any log
+ deny ip 172.16.0.0 0.15.255.255 any log
+ deny ip 192.168.0.0 0.0.255.255 any log
+ deny ip 127.0.0.0 0.255.255.255 any log
+ deny ip 224.0.0.0 31.255.255.255 any log
+ deny ip 0.0.0.0 0.255.255.255 any log
+ permit ip any any
+!
+ip access-list extended ACL-MGMT-VTY
+ permit tcp 10.10.10.0 0.0.0.255 any eq 22
+ deny   ip any any log
+!
+! --- AS-Path ACLs ---
+ip as-path access-list 1 deny _6[4-9][0-9]{3}$
+ip as-path access-list 1 deny _65[0-9]{3}$
+ip as-path access-list 1 permit .*
+!
+! --- CoPP Policy ---
+class-map match-any COPP-CRITICAL
+ match access-group name iACL-INBOUND
+!
+policy-map COPP-POLICY
+ class COPP-CRITICAL
+  police rate 512000 bps conform-action transmit exceed-action drop
+ class class-default
+  police rate 128000 bps conform-action transmit exceed-action drop
+!
+! --- BGP ---
+router bgp 65001
+ bgp router-id 1.1.1.1
+ bgp log-neighbor-changes
+ neighbor 203.0.113.1 remote-as 65002
+ neighbor 203.0.113.1 description ISP-UPSTREAM
+ neighbor 203.0.113.1 password NeighborMD5Key
+ neighbor 203.0.113.1 ttl-security hops 1
+ neighbor 203.0.113.1 maximum-prefix 500000 80
+ neighbor 203.0.113.1 prefix-list BGP-IN in
+ neighbor 203.0.113.1 prefix-list BGP-OUT out
+ neighbor 203.0.113.1 filter-list 1 in
+!
+! --- OSPF ---
+router ospf 1
+ router-id 1.1.1.1
+ area 0 authentication message-digest
+ timers throttle spf 50 200 5000
+ timers throttle lsa 50 200 5000
+ max-lsa 12000 75 warning-only
+ passive-interface default
+ no passive-interface GigabitEthernet0/1
+ distribute-list prefix IGP-FILTER in
+!
+! --- Interfaces ---
+interface Loopback0
+ description Management Loopback
+ ip address 1.1.1.1 255.255.255.255
+!
+interface GigabitEthernet0/0
+ description MANAGEMENT
+ ip address 192.168.1.1 255.255.255.0
+ no ip redirects
+ no ip unreachables
+ no ip proxy-arp
+ no ip directed-broadcast
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description WAN-UPLINK
+ ip address 203.0.113.2 255.255.255.252
+ no ip redirects
+ no ip unreachables
+ no ip proxy-arp
+ no ip directed-broadcast
+ ip verify unicast source reachable-via rx
+ ip access-group iACL-INBOUND in
+ no shutdown
+!
+interface GigabitEthernet0/2
+ description LAN-CORE
+ ip address 10.0.0.1 255.255.0.0
+ no ip redirects
+ no ip directed-broadcast
+ ! MISSING: no ip proxy-arp  (CISCO-CP-PROXYARP-001 → FAIL on this iface)
+ no shutdown
+!
+! --- Control plane ---
+control-plane
+ service-policy input COPP-POLICY
+!
+! --- Lines ---
+line con 0
+ exec-timeout 10 0
+ login authentication CONSOLE
+ logging synchronous
+!
+line aux 0
+ exec-timeout 0 1
+ no exec
+ transport input none
+!
+line vty 0 4
+ access-class ACL-MGMT-VTY in
+ exec-timeout 10 0
+ logging synchronous
+ login authentication default
+ transport input ssh
+ transport output ssh
+!
+line vty 5 15
+ access-class ACL-MGMT-VTY in
+ exec-timeout 10 0
+ login authentication default
+ transport input ssh
+ transport output ssh
+!
+! --- NetFlow ---
+flow exporter NETFLOW-EXPORT
+ destination 10.20.30.5
+ transport udp 2055
+ export-protocol netflow-v9
+!
+flow record NETFLOW-RECORD
+ match ipv4 source address
+ match ipv4 destination address
+ match transport source-port
+ match transport destination-port
+ collect counter bytes
+ collect counter packets
+!
+flow monitor NETFLOW-MONITOR
+ record NETFLOW-RECORD
+ exporter NETFLOW-EXPORT
+!
+end
