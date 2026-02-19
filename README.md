@@ -3,6 +3,32 @@
 Offline security audit tool for Cisco IOS/IOS-XE devices based on the
 [Cisco Harden IOS/IOS-XE Devices Guide](https://www.cisco.com/c/en/us/support/docs/ip/access-lists/13608-21.html).
 
+---
+
+## Quick Start
+
+**Step 1 — Export your Cisco config** (on the device):
+```
+show running-config
+```
+Copy the output and save it as a `.txt` file, e.g. `myrouter.txt`, in the project folder.
+
+**Step 2 — Install the dependency:**
+```bash
+pip install -r requirements.txt
+```
+
+**Step 3 — Run the audit:**
+```bash
+python main.py myrouter.txt --format html --output output/report.html --hostname MY-ROUTER
+```
+
+**Step 4 — Open the report:**
+
+The file `output/report.html` will be generated — open it in any browser to see the full compliance dashboard with score, pass/fail results, and remediation steps.
+
+---
+
 ## Overview
 
 This tool analyses a `show running-config` text file and evaluates it against
